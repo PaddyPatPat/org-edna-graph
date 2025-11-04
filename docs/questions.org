@@ -19,7 +19,7 @@ Affects implementation scope and testing burden.
 - Could implement both and let user choose via configuration
 
 **** Resolution
-(To be filled in after decision is made)
+we should do more research on what is going to be the best outcome for this project. The intention was defined an easy solution to create an initial first diagram and that this would be expected to change later as the project became more mature. The best outcome would be something that looks of the same class of quality as org-roam-UI. at the stage I think the best thing to do is to research how difficult each implementation would be to achieve. Find out what org-roam-ui uses to create its visualisations so thst can be compared against plantUML and graphviz. 
 
 *** TODO What should be the minimum Emacs version requirement?
 **** Context
@@ -34,7 +34,7 @@ Affects which Emacs Lisp features we can use.
 - Most users are on 27.1+ now (as of 2025)
 
 **** Resolution
-(To be filled in)
+The minimum Emacs version should match that of org-edna as our package requires this package to operate.
 
 *** TODO How should we handle very large dependency graphs?
 **** Context
@@ -51,7 +51,7 @@ Possible approaches:
 - Use interactive/zoomable visualization
 
 **** Resolution
-(To be filled in)
+There will definitely be hundreds, id not thousands of tasks to graph. This probably forms a constraint for what visualisation methods can handle this kind of request. 
 
 ** Resolved Questions
 
