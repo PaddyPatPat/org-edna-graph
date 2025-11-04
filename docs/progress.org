@@ -6,11 +6,11 @@ Last Updated: [2025-11-04]
 
 ** Research & Analysis Phase
 
-| Task ID | Task Name                          | Status      | Agent/Owner | Deliverable                            | Notes                    |
-|---------+------------------------------------+-------------+-------------+----------------------------------------+--------------------------|
-| A1      | org-edna Deep Dive                 | Not Started |             | docs/org-edna-api-reference.org        |                          |
-| A2      | lytex/org-graph-edna Analysis      | Not Started |             | docs/lytex-implementation-analysis.org |                          |
-| A3      | Diagram Tool Research              | Not Started |             | docs/diagram-generation-guide.org      |                          |
+| Task ID | Task Name                                    | Status      | Agent/Owner | Deliverable                                  | Notes                                          |
+|---------+----------------------------------------------+-------------+-------------+----------------------------------------------+------------------------------------------------|
+| A1      | org-edna Deep Dive                           | Not Started |             | docs/org-edna-api-reference.org              |                                                |
+| A2      | lytex/org-graph-edna Analysis                | Not Started |             | docs/lytex-implementation-analysis.org       |                                                |
+| A3      | Visualization Technology Research (PRIORITY) | Not Started |             | docs/visualization-technology-comparison.org | HIGH PRIORITY - includes org-roam-UI analysis |
 
 ** Design & Architecture Phase
 
@@ -60,9 +60,15 @@ When you complete a task:
 *** Current Blockers
 List any tasks that are blocked and why:
 
-- None currently
+- Design and implementation tasks are blocked pending visualization technology decision (Task A3)
 
 *** Questions Needing Resolution
 List questions that are blocking progress:
 
-- None currently
+- What visualization technology should we use? (Being addressed by Task A3 - see questions.org)
+
+*** Important Updates [2025-11-04]
+- Scale requirement clarified: Must handle 1000+ tasks (primary use case)
+- Quality goal: org-roam-UI level
+- Task A3 updated to include org-roam-UI technology research
+- Emacs version requirement decided: 26.1+ (matches org-edna)

@@ -6,52 +6,32 @@ This file tracks questions that arise during development and their resolutions.
 
 Questions that need answers before work can proceed.
 
-*** TODO Should we support both PlantUML and GraphViz or choose one?
+*** TODO What visualization technology should we use?
 **** Context
-The requirements mention "PlantUML or GraphViz" but don't specify which to prioritize.
+Need to choose between PlantUML, GraphViz, or potentially what org-roam-ui uses. The goal is org-roam-UI level quality that can handle hundreds to thousands of tasks.
 
 **** Impact
-Affects implementation scope and testing burden.
+This is a foundational decision that affects the entire implementation approach.
 
 **** Discussion
 - PlantUML pros: Higher-level syntax, easier for simple diagrams
-- GraphViz pros: More control, better for complex graphs, more widely available
-- Could implement both and let user choose via configuration
+- PlantUML cons: May not scale well to thousands of nodes
+- GraphViz pros: More control, better for complex graphs, widely available
+- GraphViz cons: Lower-level, may require more implementation work
+- org-roam-UI approach: Unknown, needs research
+
+**** Required Research
+1. What does org-roam-UI use for visualization?
+2. How do PlantUML and GraphViz perform with 1000+ node graphs?
+3. What are the difficulty levels for each implementation?
+4. Which approach best supports filtering, zooming, and interaction at scale?
+5. Can we achieve org-roam-UI quality level with PlantUML/GraphViz?
 
 **** Resolution
-we should do more research on what is going to be the best outcome for this project. The intention was defined an easy solution to create an initial first diagram and that this would be expected to change later as the project became more mature. The best outcome would be something that looks of the same class of quality as org-roam-UI. at the stage I think the best thing to do is to research how difficult each implementation would be to achieve. Find out what org-roam-ui uses to create its visualisations so thst can be compared against plantUML and graphviz. 
+Needs research phase to answer the questions above. This should be priority research task. 
 
-*** TODO What should be the minimum Emacs version requirement?
-**** Context
-Need to determine compatibility target.
 
-**** Impact
-Affects which Emacs Lisp features we can use.
-
-**** Discussion
-- org-edna requires Emacs 26.1+
-- Modern Emacs Lisp features (like threading macros) require 25.1+
-- Most users are on 27.1+ now (as of 2025)
-
-**** Resolution
-The minimum Emacs version should match that of org-edna as our package requires this package to operate.
-
-*** TODO How should we handle very large dependency graphs?
-**** Context
-If a user has hundreds of tasks, the graph could be overwhelming.
-
-**** Impact
-Affects rendering strategy and user experience.
-
-**** Discussion
-Possible approaches:
-- Filter by date range (only show tasks due within X days)
-- Filter by tag/category
-- Filter by depth (only show N levels of dependencies)
-- Use interactive/zoomable visualization
-
-**** Resolution
-There will definitely be hundreds, id not thousands of tasks to graph. This probably forms a constraint for what visualisation methods can handle this kind of request. 
+ 
 
 ** Resolved Questions
 
@@ -62,6 +42,18 @@ CLOSED: [2025-11-04]
 
 **** Resolution
 Main repository in =/docs= directory. See decisions.org for full rationale.
+
+*** DONE What should be the minimum Emacs version requirement?
+CLOSED: [2025-11-04]
+
+**** Resolution
+Emacs 26.1+ (matching org-edna's requirement). Documented in decisions.org.
+
+*** DONE What scale of graphs must we support?
+CLOSED: [2025-11-04]
+
+**** Resolution
+Hundreds to thousands of tasks. This is the primary use case, not an edge case. Added as a critical constraint in constraints.org. This significantly affects choice of visualization technology.
 
 ** Question Template
 

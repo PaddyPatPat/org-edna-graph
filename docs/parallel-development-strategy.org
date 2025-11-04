@@ -52,30 +52,35 @@ A comprehensive document: =docs/lytex-implementation-analysis.org= containing:
 - Gaps and improvement opportunities
 - Recommended code patterns to adopt
 
-*** Agent: plantuml-graphviz-expert
+*** Agent: visualization-technology-expert
 **** Purpose
-Understanding diagram generation tools (PlantUML and GraphViz).
+Comprehensive research on visualization technologies suitable for large-scale task dependency graphs (1000+ nodes).
 
 **** Focus Areas
-- PlantUML documentation and syntax
-- GraphViz documentation and syntax
-- Emacs integration approaches
-- Image generation workflows
+- org-roam-UI's visualization approach (what technology does it use?)
+- PlantUML capabilities and scalability
+- GraphViz capabilities and scalability
+- Modern web-based graph visualization libraries (if org-roam-UI uses them)
+- Emacs integration approaches for each
+- Performance testing with large graphs
 
 **** Key Questions This Agent Should Answer
-- What's the best syntax for our use case?
-- How to represent task dependencies visually?
-- How to add colors, labels, and metadata?
-- How to generate images from within Emacs?
-- Performance considerations for large graphs?
-- Which tool is better for our needs?
+- What does org-roam-UI use for visualization and why?
+- Can we achieve org-roam-UI quality level?
+- How do PlantUML and GraphViz handle 1000+ node graphs?
+- What are the performance characteristics of each?
+- Which approach supports interaction (zoom, filter, pan) best?
+- What's the implementation difficulty for each?
+- Which tool is best for our scale requirements?
 
 **** Deliverable
-A comprehensive document: =docs/diagram-generation-guide.org= containing:
-- Comparison of PlantUML vs GraphViz for our use case
-- Syntax examples for task dependency graphs
-- Emacs integration methods
-- Recommended approach with rationale
+A comprehensive document: =docs/visualization-technology-comparison.org= containing:
+- Analysis of org-roam-UI's technology stack
+- Performance comparison with large graphs (1000+ nodes)
+- Feature comparison (interactivity, filtering, styling)
+- Implementation difficulty assessment
+- Emacs integration approaches for each
+- Clear recommendation with rationale for our use case
 
 ** Parallelizable Development Tasks
 
@@ -115,21 +120,24 @@ Medium - requires reading Emacs Lisp code
 ***** Dependencies
 None
 
-**** Task A3: Diagram Tool Research
+**** Task A3: Visualization Technology Research (PRIORITY)
 ***** Agent
-plantuml-graphviz-expert (specialized)
+visualization-technology-expert (specialized)
 
 ***** Description
-Research PlantUML and GraphViz for our specific use case.
+Comprehensive research on visualization technologies including org-roam-UI's approach, PlantUML, and GraphViz. Focus on scalability to 1000+ nodes and achieving org-roam-UI quality level.
 
 ***** Deliverable
-=docs/diagram-generation-guide.org=
+=docs/visualization-technology-comparison.org=
 
 ***** Estimated Complexity
-Low-Medium - mostly documentation review
+Medium-High - requires analyzing multiple technologies, possibly running performance tests
 
 ***** Dependencies
 None
+
+***** Priority
+HIGH - This decision affects the entire implementation approach
 
 *** Task Group B: Design & Architecture (Can Start After Group A)
 

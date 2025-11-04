@@ -2,4 +2,18 @@
 
 Org-depend is the other option for defining dependencies between tasks however it only allows to set TODO keywords and has no functionality to control scheduled dates or other advanced stuff.
 
-Org-edna is a more capable version of org-depend for defining dependencies. 
+Org-edna is a more capable version of org-depend for defining dependencies.
+
+* Minimum Emacs version: 26.1+
+
+The package must be compatible with Emacs 26.1 or later, matching the requirement of org-edna.
+
+* Must handle large-scale graphs.
+
+The visualization system must be able to handle hundreds to thousands of tasks. This is not an edge case but a primary use case. The chosen visualization technology must:
+- Render large graphs efficiently
+- Remain responsive with thousands of nodes
+- Provide meaningful visualization even at scale (filtering, zooming, clustering, etc.)
+- Not become unusable or overwhelming with large datasets
+
+This constraint significantly affects the choice of visualization technology and implementation approach. 

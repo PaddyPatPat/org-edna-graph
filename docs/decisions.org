@@ -35,6 +35,24 @@ Move all documentation from wiki to =/docs= directory in main repository.
 - Documentation links updated to use file: protocol
 - Images remain in /images at repo root
 
+*** [2025-11-04] Minimum Emacs version requirement
+**** Decision maker
+Patrick Duncan (project owner)
+
+**** Context/Problem
+Need to determine compatibility target for the package to know which Emacs Lisp features we can use.
+
+**** Decision
+Minimum Emacs version should be 26.1+ (matching org-edna's requirement).
+
+**** Rationale
+Since our package requires org-edna to operate, it makes sense to match their minimum version requirement. org-edna requires Emacs 26.1+.
+
+**** Consequences
+- Can use modern Emacs Lisp features available in 26.1+
+- Simplifies dependency management
+- Clear compatibility story for users
+
 ** Decision Template
 
 Copy this template for new decisions:
