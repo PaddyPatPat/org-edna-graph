@@ -1,0 +1,869 @@
+#+TITLE: lytex/org-graph-edna Implementation Analysis
+#+AUTHOR: lytex-org-graph-edna-expert
+#+DATE: [2025-11-04]
+#+PROPERTY: header-args :results silent
+
+* Overview
+
+The =lytex/org-graph-edna= package is a minimal implementation (164 lines) that creates PlantUML diagrams to visualize org-edna task dependencies. It provides a single library function that queries org-agenda-files for tasks with BLOCKER properties and generates a PlantUML use case diagram with color-coding based on TODO states.
+
+** Repository Information
+- *URL*: https://github.com/lytex/org-graph-edna
+- *Author*: lytex (julianlpc15@gmail.com)
+- *Version*: 0.1
+- *Dependencies*: org, org-ql
+- *Lines of Code*: 164 (including comments)
+- *Last Activity*: Recent commits focused on adding color support
+
+** Key Characteristics
+- Single-function implementation
+- No interactive commands
+- PlantUML-only output
+- Hard-coded org-roam integration
+- Minimal error handling
+- No documentation beyond code comments
+
+* Architecture Analysis
+
+** Code Structure
+
+The package consists of a single file =org-graph-edna.el= with:
+- 1 customization variable
+- 1 main function
+- No helper functions or modular abstractions
+
+#+begin_src emacs-lisp
+;; Structure overview:
+(defcustom org-graph-edna-node-properties ...)  ; Styling configuration
+(defun org-graph-edna-export (filename) ...)    ; Main (only) function
+(provide 'org-graph-edna)
+#+end_src
+
+** Architectural Approach
+
+The implementation uses a *monolithic single-pass* approach:
+
+1. Execute 3 separate org-ql queries on org-agenda-files
+2. Transform results into PlantUML syntax strings
+3. Concatenate all strings together
+4. Call org-babel-execute:plantuml directly
+
+This is a "direct transformation" architecture with no intermediate data structures or abstractions.
+
+#+begin_example
+org-agenda-files → org-ql queries → string manipulation → PlantUML output
+                                                              ↓
+                                                       org-babel-execute
+#+end_example
+
+** Missing Architectural Components
+
+- No graph data structure
+- No parsing abstraction layer
+- No rendering abstraction (tied to PlantUML)
+- No caching mechanism
+- No incremental processing
+- No separation of concerns
+
+* Key Functions Analysis
+
+** Main Function: =org-graph-edna-export=
+
+#+begin_src emacs-lisp
+(defun org-graph-edna-export (filename)
+  (let* ((queries-links ...)    ; Query for dependencies, build PlantUML arrows
+         (queries-alist ...)     ; Query for node pairs (duplicates queries-links logic)
+         (queries-todo ...)      ; Query for TODO states
+         (all-tasks ...)         ; Extract unique tasks (unused variable!)
+         (skin-settings ...)     ; Generate PlantUML skinparam block
+         (color-association ...) ; Assign colors to nodes based on TODO state
+         (queries-result ...))   ; Concatenate everything
+    (org-babel-execute:plantuml
+     (concat "@startuml\n" queries-result "\n@enduml")
+     (list (cons :file filename)))))
+#+end_src
+
+*** Critical Issues:
+
+1. *Not Interactive*: Missing =(interactive ...)= - cannot be called with =M-x=
+2. *Unused Variable*: =all-tasks= is computed but never used
+3. *Redundant Queries*: =queries-links= and =queries-alist= execute nearly identical queries
+4. *Hardcoded Dependencies*: Assumes =org-babel-execute:plantuml= is configured
+5. *No Error Handling*: Will crash if BLOCKER properties are malformed
+
+* Parsing Approach
+
+** org-ql Query Strategy
+
+The implementation uses org-ql's =:select=, =:from=, and =:where= pattern:
+
+#+begin_src emacs-lisp
+(org-ql-query :select
+  '(concat ...)  ; Build output string directly in SELECT clause
+  :from (org-agenda-files)
+  :where '(and (regexp ":BLOCKER:  ids") t))
+#+end_src
+
+** What It Extracts
+
+For each task with a BLOCKER property:
+
+1. *Task ID*: From =ID= property via =(org-entry-properties nil "ID")=
+2. *Task Heading*: Via =(org-get-heading :no-tags :no-todo :no-priority :no-comment)=
+3. *Blocker ID*: Parsed from =BLOCKER= property via regex =(string-trim ... "ids(\"id:" "\")")=
+4. *Blocker Heading*: Retrieved by:
+   - Opening the blocker link with =(org-link-open-from-string ...)=
+   - Reading heading from that location
+   - Uses =save-excursion= to preserve current position
+5. *TODO State*: Via =(org-get-todo-state)=
+
+** Parsing Limitations
+
+*** Hard-Coded to BLOCKER Property
+The where clause is: ='(and (regexp ":BLOCKER:  ids") t)=
+
+This means:
+- Only BLOCKER dependencies are visualized
+- TRIGGER properties are ignored
+- Cannot show scheduled or deadline relationships
+- Cannot filter by other properties
+
+*** Hard-Coded to org-edna's =ids()= Syntax
+The parsing assumes this exact format:
+#+begin_example
+:BLOCKER: ids("id:UUID-HERE")
+#+end_example
+
+The regex: =string-trim ... "ids(\"id:" "\")"= will break with:
+- Multiple blockers: =ids("id:UUID1" "id:UUID2")=
+- Different org-edna functions: =todo(KEYWORD)=, =chain("NEXT")=
+- Plain ID links without ids() wrapper
+
+*** org-roam Integration Assumption
+All links are generated as:
+#+begin_src emacs-lisp
+(concat "org-protocol://roam-node?node=" (cdar (org-entry-properties nil "ID")))
+#+end_src
+
+This assumes:
+- org-roam is installed and configured
+- All tasks have ID properties
+- Users want org-protocol links (not org-id links)
+
+** Performance Considerations
+
+The queries use =save-excursion= and =org-link-open-from-string= for EVERY task:
+
+#+begin_src emacs-lisp
+(save-excursion
+  (org-link-open-from-string ...)  ; Opens buffer, moves point
+  (org-get-heading ...))            ; Reads heading
+#+end_src
+
+*Impact*: For N tasks, this opens N buffers and moves point N times. With 1000 tasks, this could be very slow and cause UI freezes.
+
+* PlantUML Generation
+
+** Output Format
+
+The implementation generates PlantUML *use case diagrams*:
+
+#+begin_example plantuml
+@startuml
+skinparam usecase {
+  BackgroundColor<< DONE >> LimeGreen
+  BackgroundColor<< BLOCK >> Red
+  BackgroundColor<< TODO >> Gold
+}
+([[[org-protocol://roam-node?node=UUID1 Task Name 1]]]) << DONE >>
+([[[org-protocol://roam-node?node=UUID2 Task Name 2]]]) << TODO >>
+([[[org-protocol://roam-node?node=UUID1 Task Name 1]]]) --> ([[[org-protocol://roam-node?node=UUID2 Task Name 2]]]) #blue
+@enduml
+#+end_example
+
+** Node Generation
+
+Nodes are created with:
+1. Parentheses syntax: =(...)= for use cases
+2. Triple bracket org links: =[[[URL label]]]=
+3. Stereotypes for colors: =<< TODO >>=
+
+#+begin_src emacs-lisp
+(concat "(" (car task) ") <<" (cdr task) ">>\n")
+; Produces: ([[[org-protocol://... Task Name]]]) << TODO >>
+#+end_src
+
+** Edge Generation
+
+Dependencies are represented as:
+
+#+begin_src emacs-lisp
+(concat "([[[..." from-task "]]]) --> ([[[..." to-task "]]]) #blue\n")
+#+end_src
+
+All edges are colored blue (==> #blue=).
+
+** Styling System
+
+Colors are configured via =org-graph-edna-node-properties=:
+
+#+begin_src emacs-lisp
+(defcustom org-graph-edna-node-properties
+  '(("DONE" . "LimeGreen")
+    ("BLOCK" . "Red")
+    ("TODO" . "Gold"))
+  "asdfadf")  ; Note: placeholder docstring!
+#+end_src
+
+These are converted to PlantUML skinparam directives:
+
+#+begin_example
+skinparam usecase {
+  BackgroundColor<< DONE >> LimeGreen
+  BackgroundColor<< BLOCK >> Red
+  BackgroundColor<< TODO >> Gold
+}
+#+end_example
+
+** PlantUML Limitations
+
+*** Use Case Diagrams Are Non-Standard
+PlantUML use case diagrams are designed for UML, not task graphs. This leads to:
+- Limited layout control
+- Suboptimal spacing for large graphs
+- No hierarchical clustering options
+
+*** No Advanced Styling
+The implementation doesn't support:
+- Node shapes (all are use case ovals)
+- Edge styles (all are solid blue arrows)
+- Priorities or urgency indicators
+- Deadlines or scheduling information
+- Tags visualization
+
+*** No Layout Directives
+PlantUML supports layout hints like:
+#+begin_example
+left to right direction
+scale 2.0
+#+end_example
+
+But the implementation uses none of these, so layout is entirely automatic.
+
+* Multi-file Handling
+
+** org-agenda-files Integration
+
+The =:from= clause directly uses =(org-agenda-files)=:
+
+#+begin_src emacs-lisp
+(org-ql-query
+  :select '(...)
+  :from (org-agenda-files)   ; <-- Multi-file support
+  :where '(...))
+#+end_src
+
+This is the *correct and recommended* approach for org-ql queries across multiple files.
+
+** What Works Well
+
+1. *Automatic multi-file support*: No custom file walking logic needed
+2. *Respects user configuration*: Uses the same file list as org-agenda
+3. *No file caching issues*: org-ql handles this internally
+
+** Potential Issues
+
+*** No File Source Tracking
+The implementation doesn't track which file each task came from. For debugging or UI features, this could be useful:
+
+#+begin_src emacs-lisp
+;; Not captured:
+(buffer-file-name)  ; Available during org-ql query
+#+end_src
+
+*** No Progress Indication
+With 1000+ tasks across many files, the user has no feedback during processing. No:
+- Progress messages
+- File count
+- Task count
+- Time estimates
+
+*** No Incremental Processing
+All files are queried every time. For large projects, could benefit from:
+- Caching previously processed files
+- Change detection
+- Selective re-processing
+
+* Strengths
+
+** 1. Simplicity and Clarity
+
+The entire implementation is 164 lines, making it easy to understand and modify. The monolithic approach, while not scalable, makes the data flow obvious.
+
+** 2. Correct org-ql Usage
+
+The multi-file querying via =(org-agenda-files)= is the right approach and should be adopted.
+
+** 3. Minimal Dependencies
+
+Only requires =org= and =org-ql=, both standard packages.
+
+** 4. Functional Approach
+
+Uses org-ql's =:select= clause to transform data directly, avoiding mutable state.
+
+** 5. Working Prototype
+
+Despite limitations, it does produce functional PlantUML diagrams from org-edna dependencies.
+
+** 6. Customizable Styling
+
+The =defcustom= for node colors is a good pattern for user customization.
+
+* Gaps & Limitations
+
+** Critical Gaps
+
+*** 1. No Interactive Command
+The function is not callable via =M-x= because it lacks =(interactive ...)=:
+
+#+begin_src emacs-lisp
+(defun org-graph-edna-export (filename)  ; No (interactive ...)
+  ...)
+#+end_src
+
+*Impact*: Package is unusable as a standalone tool.
+
+*** 2. BLOCKER-Only Support
+Hard-coded to only process BLOCKER properties:
+
+#+begin_src emacs-lisp
+:where '(and (regexp ":BLOCKER:  ids") t)
+#+end_src
+
+*Missing*:
+- TRIGGER dependencies
+- Bidirectional relationships
+- Custom dependency types
+
+*** 3. Brittle Parsing
+The blocker extraction assumes exact syntax:
+
+#+begin_src emacs-lisp
+(string-trim ... "ids(\"id:" "\")")
+#+end_src
+
+*Breaks with*:
+- Multiple IDs
+- Different org-edna functions
+- Whitespace variations
+
+*** 4. No Error Handling
+Zero validation of:
+- BLOCKER property format
+- ID property existence
+- File accessibility
+- PlantUML availability
+
+*** 5. Performance Issues
+Uses =save-excursion= + =org-link-open-from-string= for every task, causing:
+- Buffer churn
+- Point movement
+- Potential UI freezes with large graphs
+
+** Moderate Gaps
+
+*** 6. No Documentation
+Empty docstrings and no usage examples:
+
+#+begin_src emacs-lisp
+(defcustom org-graph-edna-node-properties ... "asdfadf")  ; Literal "asdfadf"!
+#+end_src
+
+*** 7. Hard-Coded org-roam Integration
+Assumes org-roam and generates org-protocol links, limiting portability.
+
+*** 8. Redundant Computation
+=queries-links= and =queries-alist= execute nearly identical queries, wasting cycles.
+
+*** 9. Unused Variables
+=all-tasks= is computed but never used, suggesting incomplete refactoring.
+
+*** 10. No Abstraction Layers
+Mixing parsing, graph construction, and rendering in a single function makes it hard to:
+- Swap renderers (e.g., GraphViz)
+- Add filters
+- Test components
+
+** Minor Gaps
+
+*** 11. Limited Styling Options
+Only supports TODO state colors, no:
+- Priority-based colors
+- Tag-based styling
+- Deadline urgency
+- Custom node shapes
+
+*** 12. No Layout Control
+PlantUML layout is entirely automatic with no user control.
+
+*** 13. No Output Options
+Hard-coded to file output via =org-babel-execute:plantuml=, no:
+- Buffer display
+- Clipboard copy
+- HTML export
+
+* Reusable Patterns
+
+** Pattern 1: org-ql Multi-File Queries
+
+#+begin_src emacs-lisp
+;; ADOPT THIS:
+(org-ql-query
+  :select '(...)
+  :from (org-agenda-files)  ; Automatic multi-file support
+  :where '(...))
+#+end_src
+
+*Recommendation*: Use this exact pattern for our implementation.
+
+** Pattern 2: Property-Based Configuration
+
+#+begin_src emacs-lisp
+;; ADOPT THIS:
+(defcustom org-graph-edna-node-properties
+  '(("DONE" . "LimeGreen")
+    ("BLOCK" . "Red")
+    ("TODO" . "Gold"))
+  "Documentation here")
+#+end_src
+
+*Recommendation*: Create similar customization for:
+- Node colors by TODO state
+- Node shapes by tags
+- Edge colors by relationship type
+
+** Pattern 3: Direct PlantUML Execution
+
+#+begin_src emacs-lisp
+;; USEFUL FOR PROTOTYPING:
+(org-babel-execute:plantuml
+ (concat "@startuml\n" ... "\n@enduml")
+ (list (cons :file filename)))
+#+end_src
+
+*Recommendation*: Use for PlantUML renderer module, but abstract behind interface.
+
+** Anti-Pattern 1: Monolithic Functions
+
+#+begin_src emacs-lisp
+;; AVOID THIS:
+(defun do-everything (filename)
+  (let* ((data1 (query1))
+         (data2 (query2))
+         (data3 (process data1 data2))
+         ...)
+    (render-output)))
+#+end_src
+
+*Better*:
+#+begin_src emacs-lisp
+(defun org-edna-graph-export (filename)
+  (let* ((tasks (org-edna-graph--parse-tasks))
+         (graph (org-edna-graph--build-graph tasks))
+         (output (org-edna-graph--render-plantuml graph)))
+    (org-edna-graph--save-output output filename)))
+#+end_src
+
+** Anti-Pattern 2: save-excursion for Every Query
+
+#+begin_src emacs-lisp
+;; AVOID THIS:
+(org-ql-query
+  :select '(... (save-excursion (org-link-open-from-string ...)))
+  ...)
+#+end_src
+
+*Better*: Build ID-to-heading map first, then lookup:
+
+#+begin_src emacs-lisp
+;; First pass: collect all IDs and headings
+(setq id-to-heading
+  (org-ql-query
+    :select '(cons (cdar (org-entry-properties nil "ID"))
+                   (org-get-heading ...))
+    :from (org-agenda-files)
+    :where '(property "ID")))
+
+;; Second pass: use the map (no buffer jumps)
+(gethash blocker-id id-to-heading)
+#+end_src
+
+** Anti-Pattern 3: String Concatenation for Complex Output
+
+#+begin_src emacs-lisp
+;; AVOID FOR LARGE GRAPHS:
+(concat string1 string2 string3 ... string1000)
+#+end_src
+
+*Better*: Use a buffer or list:
+
+#+begin_src emacs-lisp
+(with-temp-buffer
+  (insert "@startuml\n")
+  (dolist (node nodes)
+    (insert (format-node node)))
+  (insert "@enduml\n")
+  (buffer-string))
+#+end_src
+
+* Lessons Learned
+
+** What to Emulate
+
+*** 1. Use org-ql for Queries
+org-ql is the right tool for multi-file org queries. Don't reinvent this wheel.
+
+*** 2. Leverage org-agenda-files
+Respect user's existing file organization rather than requiring separate configuration.
+
+*** 3. Start Simple
+A working prototype with limitations is better than a perfect design that never ships.
+
+*** 4. Use defcustom for Styling
+Make visual appearance customizable through standard Emacs customization.
+
+** What to Avoid
+
+*** 1. Non-Interactive Library Functions
+Every user-facing function MUST have =(interactive ...)= or it's unusable.
+
+*** 2. Monolithic Design
+Separation of parsing, graph building, and rendering is critical for:
+- Testing
+- Multiple output formats
+- Performance optimization
+- Maintainability
+
+*** 3. Hard-Coded Assumptions
+Don't assume:
+- Specific org-edna syntax
+- org-roam installation
+- Single dependency type
+- Specific link formats
+
+*** 4. Naive Performance Approaches
+With 1000+ tasks, every buffer jump and point movement matters. Pre-compute lookups.
+
+*** 5. Missing Error Handling
+Users have malformed data. Graceful degradation is required.
+
+** Key Insights
+
+*** Insight 1: PlantUML Use Case Diagrams Are Suboptimal
+While they work, use case diagrams aren't designed for task graphs. Consider:
+- PlantUML activity diagrams
+- PlantUML class diagrams
+- GraphViz directed graphs
+
+*** Insight 2: Two-Pass Processing Needed
+1. *First pass*: Collect all nodes (ID → heading map)
+2. *Second pass*: Process edges (fast lookups, no buffer jumps)
+
+This is O(2n) but with much better constants than O(n²) buffer navigation.
+
+*** Insight 3: org-ql :select Should Return Data, Not Strings
+The implementation builds strings directly in =:select= clauses:
+
+#+begin_src emacs-lisp
+:select '(concat "(" ... ")")
+#+end_src
+
+Better: Return structured data, format later:
+
+#+begin_src emacs-lisp
+:select '(list :id (cdar (org-entry-properties nil "ID"))
+               :heading (org-get-heading ...)
+               :todo (org-get-todo-state))
+#+end_src
+
+*** Insight 4: Caching Strategy Needed
+For 1000+ tasks, full re-processing on every call is wasteful. Consider:
+- File modification time tracking
+- Persistent cache with invalidation
+- Incremental updates
+
+*** Insight 5: User Feedback Is Critical
+Long operations need progress indication:
+- "Processing 45/1000 tasks..."
+- "Generating PlantUML diagram..."
+- "Rendering image..."
+
+* Scale Considerations
+
+** Current Implementation Scaling
+
+For 1000 tasks, the lytex implementation would:
+
+1. *Query Execution*: 3 org-ql queries × 1000 tasks = potentially good (org-ql is optimized)
+2. *Buffer Navigation*: 1000 × =save-excursion= + =org-link-open-from-string= = *VERY SLOW*
+3. *String Concatenation*: 1000+ strings = moderate overhead
+4. *PlantUML Rendering*: 1000 nodes + edges = PlantUML may struggle with layout
+
+** Estimated Performance
+
+| Tasks | Query Time | Navigation Time | Rendering Time | Total   | Usability      |
+|-------+------------+-----------------+----------------+---------+----------------|
+|    10 | < 1s       | < 1s            | < 1s           | ~2s     | Acceptable     |
+|   100 | ~1s        | ~10s            | ~5s            | ~16s    | Slow           |
+|  1000 | ~5s        | ~100s (!)       | ~30s           | ~135s   | Unusable       |
+| 10000 | ~30s       | ~1000s (!!!)    | ~300s          | ~1330s  | Completely broken |
+
+*Bottleneck*: Buffer navigation scales linearly with task count and is the dominant factor.
+
+** Optimization Strategies for Scale
+
+*** Strategy 1: Eliminate Buffer Navigation
+
+*Current*:
+#+begin_src emacs-lisp
+(save-excursion
+  (org-link-open-from-string blocker-link)
+  (org-get-heading))
+#+end_src
+
+*Optimized*:
+#+begin_src emacs-lisp
+;; Pre-build ID → heading hash table in single pass
+(let ((id-map (make-hash-table :test 'equal)))
+  (org-ql-query
+    :select (lambda ()
+              (puthash (org-id-get)
+                       (org-get-heading ...)
+                       id-map))
+    :from (org-agenda-files)
+    :where '(property "ID"))
+  id-map)
+#+end_src
+
+*Expected improvement*: 100x speedup for large graphs.
+
+*** Strategy 2: Streaming Output
+
+Instead of building a giant string:
+
+#+begin_src emacs-lisp
+(with-temp-file filename
+  (insert "@startuml\n")
+  (insert skin-settings)
+  (dolist (node nodes)
+    (insert (format-node node)))
+  (dolist (edge edges)
+    (insert (format-edge edge)))
+  (insert "@enduml\n"))
+#+end_src
+
+*Expected improvement*: Constant memory usage vs. O(n) string storage.
+
+*** Strategy 3: Parallel Processing
+
+For very large graphs:
+
+#+begin_src emacs-lisp
+;; Process files in parallel (if Emacs supports async)
+(org-ql-query
+  :from (org-agenda-files)  ; org-ql can process files independently
+  :where '(...))
+#+end_src
+
+Note: Emacs isn't truly multithreaded, but org-ql might support async queries.
+
+*** Strategy 4: Progressive Rendering
+
+For interactive use:
+
+1. Show a subset (e.g., 100 tasks) immediately
+2. Allow filtering/zooming
+3. Render full graph on demand
+
+*** Strategy 5: Graph Simplification
+
+For 1000+ tasks, show:
+- Only top-level tasks
+- Only tasks matching filters
+- Aggregated views (by project, by status)
+
+** PlantUML Scalability Issues
+
+PlantUML may struggle with 1000+ nodes:
+- Automatic layout becomes slow
+- Diagrams become unreadable
+- File size bloats
+
+*Alternative*: Consider GraphViz for large graphs:
+- Better performance with large graphs
+- More layout algorithms (dot, neato, fdp, sfdp)
+- =sfdp= specifically designed for large graphs
+
+** Memory Considerations
+
+With 1000 tasks:
+- Task data: ~100 bytes × 1000 = 100 KB (negligible)
+- PlantUML output: ~200 bytes/line × 2000 lines = 400 KB (fine)
+- Rendered image: Depends on resolution, could be 1-10 MB
+
+Memory is unlikely to be a bottleneck; CPU time for layout and rendering will be.
+
+** Recommendation for 1000+ Tasks
+
+1. *MUST*: Eliminate =save-excursion= buffer navigation
+2. *MUST*: Use hash table for ID lookups
+3. *SHOULD*: Add progress indicators
+4. *SHOULD*: Support filtering/subsetting
+5. *CONSIDER*: GraphViz instead of PlantUML for large graphs
+6. *CONSIDER*: Caching strategy for repeated renders
+
+* Recommendations for org-edna-graph
+
+Based on this analysis, here are concrete recommendations:
+
+** Architecture
+
+1. *Adopt Modular Design*:
+   #+begin_example
+   Parser → Graph Builder → Renderer → Output
+   #+end_example
+
+2. *Create Abstractions*:
+   - Graph data structure (nodes + edges)
+   - Renderer interface (multiple implementations)
+   - Query interface (abstract org-ql details)
+
+3. *Support Multiple Outputs*:
+   - PlantUML (for small-medium graphs)
+   - GraphViz (for large graphs)
+   - JSON (for external tools)
+
+** Parsing
+
+1. *Two-Pass Approach*:
+   - Pass 1: Build ID → task-info hash table
+   - Pass 2: Process dependencies with fast lookups
+
+2. *Support All org-edna Syntax*:
+   - BLOCKER and TRIGGER
+   - All org-edna functions (ids, todo, chain, etc.)
+   - Multiple dependencies per task
+
+3. *Robust Error Handling*:
+   - Validate property formats
+   - Handle missing IDs gracefully
+   - Report malformed dependencies
+
+** Rendering
+
+1. *PlantUML Options*:
+   - Activity diagrams (better for task flows)
+   - Class diagrams (better for complex relationships)
+   - User-configurable diagram type
+
+2. *Advanced Styling*:
+   - TODO state colors (like lytex)
+   - Priority-based shapes
+   - Tag-based grouping
+   - Deadline urgency indicators
+
+3. *Layout Control*:
+   - Direction (top-down, left-right)
+   - Clustering by project/tags
+   - Manual node positioning (advanced feature)
+
+** User Interface
+
+1. *Interactive Commands*:
+   #+begin_src emacs-lisp
+   (defun org-edna-graph-export-current-file (filename)
+     (interactive "FSave graph to: ")
+     ...)
+
+   (defun org-edna-graph-export-agenda-files (filename)
+     (interactive "FSave graph to: ")
+     ...)
+
+   (defun org-edna-graph-display-buffer ()
+     (interactive)
+     ...)
+   #+end_src
+
+2. *Filtering Options*:
+   - By TODO state
+   - By tags
+   - By file
+   - By depth (N levels of dependencies)
+
+3. *Progress Indication*:
+   - Use =(message "Processing %d/%d tasks..." n total)=
+   - Progress bar for large operations
+
+** Performance
+
+1. *Hash Table Lookups*:
+   - Never use =save-excursion= + =org-link-open-from-string= in loops
+   - Pre-build all ID → heading mappings
+
+2. *Incremental Processing*:
+   - Cache parsed results
+   - Detect file modifications
+   - Only re-process changed files
+
+3. *Subset Rendering*:
+   - Default to showing subset (e.g., 100 tasks)
+   - Provide filtering UI
+   - Full graph on explicit request
+
+** Testing
+
+1. *Test Data*:
+   - Small graph (10 tasks) - correctness tests
+   - Medium graph (100 tasks) - feature tests
+   - Large graph (1000 tasks) - performance tests
+
+2. *Error Cases*:
+   - Malformed BLOCKER properties
+   - Missing IDs
+   - Circular dependencies
+   - Empty files
+
+** Documentation
+
+1. *Code Documentation*:
+   - Proper docstrings for all functions
+   - Commentary explaining design decisions
+   - Examples in docstrings
+
+2. *User Documentation*:
+   - Quick start guide
+   - Configuration examples
+   - Troubleshooting section
+
+* Conclusion
+
+The lytex/org-graph-edna implementation is a valuable proof-of-concept that demonstrates:
+- org-ql is the right tool for multi-file queries
+- PlantUML can visualize org-edna dependencies
+- Basic styling is achievable and desirable
+
+However, it has critical limitations that prevent it from being a production-ready solution:
+- No interactive commands
+- Poor performance scalability (O(n) buffer navigation)
+- Brittle parsing (BLOCKER-only, exact syntax required)
+- Monolithic design (hard to extend or test)
+- Missing error handling
+
+For org-edna-graph to succeed with 1000+ tasks, we must:
+1. Adopt the good patterns (org-ql queries, customizable styling)
+2. Fix the performance issues (hash table lookups, two-pass processing)
+3. Add missing features (interactive commands, filtering, multiple renderers)
+4. Use modular architecture (separate parsing, graph building, rendering)
+
+The lytex implementation serves as an excellent starting point for understanding the problem space, but our implementation should be a significant evolution rather than a simple enhancement.
