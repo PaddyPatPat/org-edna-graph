@@ -1,0 +1,13 @@
+Personally I found org-edna very difficult to install successfully so here is some guidelines to help others with the installation.
+
+* Packages required:
+
+** [[https://savannah.nongnu.org/projects/org-edna-el/][org-edna]]
+Edna provides extensible conditions and actions for Org Mode tasks. It runs when BLOCKER or TRIGGER properties are set, or when changing from TODO to DONE.
+
+** [[https://github.com/toshism/org-linker-edna][org-linker-edna]]
+Org-linker-edna automates the creation of task dependencies in Org mode's org-edna by adding TRIGGER and BLOCKER properties. It simplifies linking tasks by:
+- generating unique identifiers
+- sets bi-directional dependencies, and
+- schedules follow-up tasks
+It minimises the otherwise manual effort.

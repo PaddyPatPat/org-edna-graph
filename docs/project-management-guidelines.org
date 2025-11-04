@@ -1,0 +1,5 @@
+* Role of the README.org
+This is to introduce people to the project.
+
+* Role of the Documentation (=/docs= directory).
+This is to host the context of the project and the discussion regarding what should be done. All detailed documentation is maintained as org-mode files in the =/docs= directory, starting with =docs/index.org=.

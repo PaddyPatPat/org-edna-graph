@@ -1,0 +1,21 @@
+Welcome to the org-edna-graph documentation!
+
+** Project setup.
+- [[file:constraints.org][Constraints]]
+  Things that define the constraints of the project.
+- [[file:requirements.org][Requirements]]
+  Requirements that the project must meet.
+- [[file:existing-discussions.org][Existing discussions]]
+  Useful existing discussions elsewhere on the net.
+
+** [[file:potentially-useful-tools.org][Potentially useful tools]]
+Existing tools and methods that might prove useful.
+
+** [[file:org-edna-setup-guidelines.org][org-edna setup guidelines]]
+Personally I found org-edna very difficult to install successfully so here is some guidelines to help others with the installation.
+
+** [[file:project-housekeeping.org][Project housekeeping]]
+Guidelines for the project, focusing on the role of README.org for introductions and documentation organization.
+
+** [[file:project-management-guidelines.org][Project management guidelines]]
+Documentation strategy and workflow guidance.

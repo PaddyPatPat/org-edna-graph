@@ -1,0 +1,8 @@
+* Called using an interactive function.
+The image would be updated whenever an interactive function was called.
+
+* Can draw on one or multiple files.
+The source of the org-mode tasks could be either a single file, or multiple files. Multiple files could be those used by org-agenda for example.
+
+* Display the relationships using existing diagram creation tools.
+This might be PlantUML or GraphViz for example.
