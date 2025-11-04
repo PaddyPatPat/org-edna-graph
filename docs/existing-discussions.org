@@ -1,0 +1,26 @@
+* [[https://karl-voit.at/2020/08/14/project-mgt-draft/][Karl Voit's "A Draft Workflow for Advanced Project Management Using Org Mode and Org Edna"]]
+
+[[../images/2020-08-14 Garage Project - dangling nodes -- publicvoit.png]]
+
+** Things that are missing.
+
+*** There doesn't appear to be any automation for creating the PlantUML file.
+Karl appears to create the PlantUML file manually from his org-mode files and then converts that into an image.
+
+* [[https://www.sachachua.com/sharing/evil-plans.html][Sacha Chua's Evil plans.]]
+
+Sacha uses GraphViz in order to create a diagram of the related tasks and outcomes.
+
+[[../images/evil_plans2.png]]
+
+** Things that are missing.
+*** It doesn't appear to use org-edna dependency syntax.
+This means that you can't make the most of org-edna's functions.
+*** It doesn't appear to pull it's tasks from multiple files.
+
+* Similar in intention to what [[https://github.com/org-roam/org-roam-ui][org-roam-ui]] provides but for tasks.
+Org-roam-ui is way too slick, and way too polished for what I'm currently imagining is possible.
+
+However, it demonstrates what can be achieved to visually display relationships between things spread across multiple files.
+
+[[../images/136942774-3f293f65-dbd4-4479-b530-1fde738c5289.png]]

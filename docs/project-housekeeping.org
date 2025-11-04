@@ -1,0 +1,22 @@
+* Role of the README.org
+A README should contain only the necessary information for developers to get started using and contributing to your project. Longer documentation should be organized in the =/docs= directory.
+
+* Role of the /docs directory.
+This is to host the context of the project and the discussion regarding what should be done. All detailed documentation is maintained as org-mode files in the =/docs= directory of the main repository.
+
+* DONE Documentation organization.
+All project documentation has been moved from the GitHub wiki into the =/docs= directory of the main repository. This keeps everything version controlled together with the code and avoids the complexity of managing a separate wiki repository.
+
+Documentation files use org-mode format (.org) and are linked from =docs/index.org=.
+
+Images are stored in the =/images= directory at the repository root, referenced from docs using relative paths (=../images/filename.png=).
+
+* Task tracking within documentation.
+Keep in mind that it would be good to follow literate programming techniques for any implementation examples or code snippets in the documentation.
+
+* Embraces literate programming.
+Considering how new I am to programming, literate programming seems to only be a helpful thing for a new person learning how to program. Also, it would make sense to me that this would also make it easier for other people to collaborate as the description of the code is right there. 
+
+
+* Can be installed using the package Straight.el.
+Straight.el is a very helpful way of installing packages directly from their git repositories. 

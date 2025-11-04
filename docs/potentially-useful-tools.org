@@ -1,0 +1,23 @@
+* [[https://github.com/lytex/org-graph-edna/tree/master][lytex/org-graph-enda]]
+An Emacs package for creating a PlantUML file from existing org-edna dependencies.
+** Things that are missing.
+*** There is no interactive defun within this package.
+It requires another function to call it.
+*** Multi-file support exists but isn't obvious.
+The code does support multiple files via =org-agenda-files= variable (see Query Source below), but this capability isn't well documented or exposed through a user-friendly interface.
+
+** The code performs the following tasks.
+
+*** Query Structure:
+Two queries are defined: one for blocked nodes and one for blocked nodes with IDs.
+*** Query Fields:
+Each query selects a link to the node and a link to the blocking node.
+*** Query Source:
+Both queries search all files in the org-agenda-files variable.
+*** Task Query:
+Retrieve tasks with the “:BLOCKER:” tag and extract the “ids” property.
+*** Graph Skin:
+Define the “usecase” skin parameter with background color mappings from org-graph-edna-node-properties.
+*** Color Association:
+Create a list of color associations for tasks, mapping task names to colors.
+

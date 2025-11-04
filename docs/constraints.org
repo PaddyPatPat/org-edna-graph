@@ -1,0 +1,5 @@
+* org-edna dependency compatibility.
+
+Org-depend is the other option for defining dependencies between tasks however it only allows to set TODO keywords and has no functionality to control scheduled dates or other advanced stuff.
+
+Org-edna is a more capable version of org-depend for defining dependencies. 

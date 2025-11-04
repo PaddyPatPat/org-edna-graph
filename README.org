@@ -1,5 +1,5 @@
 * org-edna-graph
-Visually displaying org-edna dependencies between org-mode tasks. More information is available in the [[https://github.com/PaddyPatPat/org-edna-graph/wiki][wiki]].
+Visually displaying org-edna dependencies between org-mode tasks. More information is available in the [[file:docs/index.org][documentation]].
 
 ** The problem this package sets out to solve.
 When trying to tackle large lists of related tasks, it is easy to feel overwhelmed and uncertain regarding what to do next.
@@ -10,7 +10,4 @@ When trying to tackle large lists of related tasks, it is easy to feel overwhelm
 - A visual provides a quick method of seeing which tasks are more urgent.
 
 ** The role of this package.
-Generate a visual for dependencies between org-mode tasks, defined by org-edna
-
-.
-
+Generate a visual for dependencies between org-mode tasks, defined by org-edna.
