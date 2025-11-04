@@ -1,0 +1,600 @@
+#+TITLE: Architecture Recommendations for org-edna-graph
+#+DATE: 2025-11-04
+#+AUTHOR: Based on org-roam-ui Research
+
+* Introduction
+
+This document provides architectural recommendations for org-edna-graph, drawing inspiration from org-roam-ui's successful implementation. The goal is to leverage proven patterns while adapting them to the specific needs of visualizing org-edna task dependencies.
+
+For complete details on org-roam-ui's architecture, see [[file:org-roam-ui-research.md][org-roam-ui research]].
+
+* Executive Summary
+
+Recommended approach: *Dual-component architecture with real-time synchronization*
+
+- **Emacs Backend**: Elisp package that queries org-edna data and serves it via WebSocket/HTTP
+- **Web Frontend**: Modern JavaScript visualization (React + graph library)
+- **Communication**: Real-time bidirectional protocol
+- **Distribution**: Pre-built frontend bundled with Elisp package for easy MELPA installation
+
+* Core Architectural Recommendations
+
+** 1. Adopt Dual-Component Architecture
+
+*** Why This Pattern Works for org-edna-graph
+
+*Strengths*:
+- Emacs handles data extraction (has native access to org-edna, org-mode parsing)
+- Web browser provides powerful, modern visualization capabilities
+- Clean separation of concerns
+- Users can keep Emacs workflow while enjoying rich visualizations
+- Enables mobile/tablet viewing of task graphs
+
+*Implementation*:
+#+begin_src
+┌─────────────────────────────────────────────────────────────┐
+│                         EMACS                                │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │         org-edna-graph.el (Backend)                │     │
+│  │  • Parse org-edna dependencies                     │     │
+│  │  • Extract task metadata                           │     │
+│  │  • HTTP Server :36901                              │     │
+│  │  • WebSocket Server :36903                         │     │
+│  │  • Track org-agenda file changes                   │     │
+│  └────────────────────────────────────────────────────┘     │
+│                          ↕                                   │
+│                    WebSocket + HTTP                          │
+└──────────────────────────────────────────────────────────────┘
+                           ↕
+┌─────────────────────────────────────────────────────────────┐
+│              BROWSER (localhost:36901)                       │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │        Task Dependency Visualizer                  │     │
+│  │                                                     │     │
+│  │  • Interactive DAG (Directed Acyclic Graph)        │     │
+│  │  • Task detail panel                               │     │
+│  │  • Timeline view                                   │     │
+│  │  • Critical path highlighting                      │     │
+│  │  • Filtering by status/priority/tags               │     │
+│  └────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────┘
+#+end_src
+
+** 2. Communication Protocol Design
+
+*** WebSocket Message Types
+
+*Emacs → Browser*:
+#+begin_src typescript
+// Graph data with tasks and dependencies
+{
+  type: "graphdata",
+  data: {
+    tasks: [
+      {
+        id: string,              // org-mode entry ID
+        title: string,           // Task headline
+        state: string,           // TODO, DONE, etc.
+        priority: string,        // [#A], [#B], [#C]
+        tags: string[],          // Task tags
+        scheduled: string,       // Scheduled date
+        deadline: string,        // Deadline date
+        effort: string,          // Effort estimate
+        file: string,            // File path
+        position: number,        // Position in file
+        level: number,           // Heading level
+        properties: object       // All properties
+      }
+    ],
+    dependencies: [
+      {
+        source: string,          // Source task ID
+        target: string,          // Target task ID
+        type: string,            // "todo-state", "scheduled", "deadline", "chain"
+        condition: string,       // Edna condition (e.g., "todo!(DONE)")
+        action: string          // Edna action (e.g., "todo!(TODO)")
+      }
+    ]
+  }
+}
+
+// Current task focus (follow mode)
+{
+  type: "command",
+  data: {
+    commandName: "follow",
+    taskId: string               // Current task at point
+  }
+}
+
+// Emacs theme colors
+{
+  type: "theme",
+  data: {
+    bg: string,
+    fg: string,
+    todo: string,
+    done: string,
+    priorities: { A: string, B: string, C: string },
+    tags: { [tag: string]: string }
+  }
+}
+
+// File/agenda scope
+{
+  type: "scope",
+  data: {
+    files: string[],             // Files in scope
+    agendaFiles: boolean,        // Using agenda files?
+    currentFile: string         // Active file
+  }
+}
+#+end_src
+
+*Browser → Emacs*:
+#+begin_src typescript
+// Open task in Emacs
+{
+  command: "open",
+  data: {
+    taskId: string,
+    file: string,
+    position: number
+  }
+}
+
+// Update task state
+{
+  command: "updateState",
+  data: {
+    taskId: string,
+    newState: string
+  }
+}
+
+// Request refresh
+{
+  command: "refresh",
+  data: {
+    scope: "current" | "agenda" | "all"
+  }
+}
+
+// Create new task
+{
+  command: "createTask",
+  data: {
+    parentId: string,
+    title: string,
+    ednaSpec: string           // BLOCKER, TRIGGER, etc.
+  }
+}
+#+end_src
+
+** 3. Technology Stack Recommendations
+
+*** Backend (Emacs Lisp)
+
+*Required Libraries*:
+- ~simple-httpd~ - HTTP server for serving web app and endpoints
+- ~websocket~ - WebSocket server for real-time communication
+- ~org-edna~ - Parse and understand dependencies
+- ~org-element~ - Parse org-mode structure
+- ~json~ - Fast JSON encoding (requires Emacs >= 27.1)
+- ~f~ / ~dash~ - File and list utilities
+
+*Suggested Ports*:
+- HTTP: 36901 (different from org-roam-ui to avoid conflicts)
+- WebSocket: 36903
+
+*** Frontend (Modern Web Stack)
+
+*Core Framework*:
+- *Next.js* + *React* + *TypeScript* (proven by org-roam-ui)
+- Alternative: *Vite* + *React* (faster build times, simpler setup)
+
+*Graph Visualization*:
+- *Recommended*: ~@dagrejs/dagre~ + ~reactflow~ / ~react-diagrams~
+  - Better for hierarchical, directed graphs (DAGs)
+  - Built-in layout algorithms for dependencies
+  - Handles cycles gracefully
+  - More suitable for task dependencies than force-directed
+
+- *Alternative*: ~cytoscape.js~
+  - Powerful graph analysis
+  - Multiple layout algorithms
+  - Good for both hierarchical and network views
+
+*NOT recommended*: Force-directed graphs (d3-force, react-force-graph)
+  - org-roam-ui uses these because knowledge graphs have no inherent hierarchy
+  - Task dependencies ARE hierarchical (topological ordering)
+  - Force-directed would create chaotic, hard-to-read visualizations
+
+*UI Components*:
+- ~@chakra-ui/react~ - Comprehensive, accessible component library
+- ~framer-motion~ - Smooth animations
+- ~react-icons~ - Icon library
+
+*Additional Libraries*:
+- ~date-fns~ - Date manipulation and display
+- ~uniorg~ - Parse org-mode content in JavaScript (if showing task bodies)
+- ~zustand~ or ~jotai~ - Lightweight state management
+- ~react-hotkeys-hook~ - Keyboard shortcuts
+
+*** Build & Distribution
+
+*Development*:
+#+begin_src bash
+# Fast development with hot reload
+npm run dev
+
+# Runs on localhost:3000
+# Proxies WebSocket to Emacs backend
+#+end_src
+
+*Production*:
+#+begin_src bash
+# Build optimized static bundle
+npm run build
+
+# Export to ./out/ directory
+npm run export
+
+# Result: Static HTML/CSS/JS files
+# Serve directly from Emacs via simple-httpd
+#+end_src
+
+*Package Structure*:
+#+begin_src
+org-edna-graph/
+├── org-edna-graph.el          # Main Elisp file
+├── org-edna-graph-server.el   # HTTP/WebSocket server
+├── org-edna-graph-parser.el   # Edna parsing logic
+├── out/                       # Pre-built frontend (committed to repo)
+│   ├── index.html
+│   ├── _next/
+│   └── ...
+├── frontend/                  # Source (for developers)
+│   ├── package.json
+│   ├── pages/
+│   ├── components/
+│   └── ...
+└── README.org
+#+end_src
+
+** 4. Feature Recommendations
+
+*** Essential Features (MVP)
+
+1. *DAG Visualization*
+   - Topologically sorted layout
+   - Clear directional arrows showing dependencies
+   - Different colors for task states (TODO, DONE, WAITING, etc.)
+
+2. *Task Detail Panel*
+   - Show full task metadata
+   - Display org-edna BLOCKER and TRIGGER properties
+   - Show scheduled/deadline dates
+   - Priority and effort indicators
+
+3. *Basic Interactivity*
+   - Click task → opens in Emacs
+   - Hover → show quick info
+   - Pan and zoom
+   - Highlight dependency paths
+
+4. *Scope Control*
+   - Current file only
+   - All agenda files
+   - Custom file selection
+
+5. *Theme Synchronization*
+   - Extract Emacs theme colors
+   - Apply to graph visualization
+   - Support doom-themes out of the box
+
+*** Advanced Features (Post-MVP)
+
+1. *Critical Path Analysis*
+   - Highlight longest dependency chain
+   - Calculate earliest/latest start times
+   - Show slack time for each task
+
+2. *Timeline View*
+   - Gantt-chart style timeline
+   - Shows scheduled dates and deadlines
+   - Accounts for dependencies
+
+3. *Filtering*
+   - By TODO state
+   - By priority
+   - By tags
+   - By effort estimate
+   - By file/project
+
+4. *Follow Mode*
+   - Browser automatically highlights task at point in Emacs
+   - Tracks cursor movement
+   - Configurable update frequency
+
+5. *Task Creation*
+   - Create new tasks from graph
+   - Automatically set up dependencies
+   - Template support
+
+6. *Dependency Editing*
+   - Visual dependency creation (drag & drop)
+   - Edit BLOCKER/TRIGGER properties
+   - Validate edna syntax
+
+7. *Export*
+   - Export graph as PNG/SVG
+   - Export to GraphViz DOT format
+   - Export to PlantUML (for integration with existing workflows)
+
+8. *Multiple Layout Algorithms*
+   - Top-to-bottom (default for dependencies)
+   - Left-to-right
+   - Circular (for cycle visualization)
+   - Timeline-based (horizontal by date)
+
+9. *Cycle Detection*
+   - Detect circular dependencies
+   - Highlight problematic cycles
+   - Suggest resolutions
+
+10. *Statistics Panel*
+    - Total tasks
+    - By state breakdown
+    - Average effort
+    - Estimated completion time
+    - Dependency density metrics
+
+** 5. State Management Strategy
+
+*** Persistent State (localStorage)
+
+Store user preferences locally:
+- Layout algorithm choice
+- Zoom level and pan position
+- Panel sizes and visibility
+- Color customizations
+- Filter preferences
+- Scope selection
+
+*** Session State (React State)
+
+Keep in memory:
+- Current graph data
+- Selected task
+- Hovered elements
+- UI modal states
+- WebSocket connection status
+
+*** Synchronized State (from Emacs)
+
+Receive from backend:
+- Task list with metadata
+- Dependency relationships
+- Current task at point (follow mode)
+- Theme colors
+- File scope
+
+** 6. Real-time Update Strategy
+
+*** File Change Detection
+
+*Approach 1: Hook-based (Recommended)*
+#+begin_src elisp
+(add-hook 'after-save-hook #'org-edna-graph--maybe-update)
+(add-hook 'org-after-todo-state-change-hook #'org-edna-graph--send-update)
+#+end_src
+
+*Approach 2: Timer-based (Fallback)*
+#+begin_src elisp
+(run-with-timer 5 5 #'org-edna-graph--check-changes)
+#+end_src
+
+*** Incremental Updates
+
+Instead of sending full graph on every change:
+1. Send full graph on initial connection
+2. Send delta updates for individual task changes
+3. Browser merges updates into existing graph
+4. Smooth animations between states
+
+** 7. Performance Considerations
+
+*** Backend Performance
+
+*Caching Strategy*:
+- Cache parsed task tree per file
+- Invalidate on save
+- Lazy parse: only parse files in scope
+
+*Batch Processing*:
+- When multiple files change, batch updates
+- Use timer to debounce (e.g., 500ms after last change)
+
+*** Frontend Performance
+
+*Large Graph Handling*:
+- Virtual rendering for >500 tasks
+- Progressive disclosure (expand/collapse subtrees)
+- Level-of-detail rendering (simplify when zoomed out)
+
+*Animation*:
+- Use requestAnimationFrame
+- Throttle updates during pan/zoom
+- Disable animations for graphs >1000 nodes
+
+** 8. User Experience Patterns from org-roam-ui
+
+*** Follow Mode
+- Toggle to track Emacs cursor
+- Smoothly animate to current task
+- Configurable focus behavior
+
+*** Keyboard Shortcuts
+- Space: Center on selected
+- F: Toggle follow mode
+- R: Refresh
+- /: Focus search
+- Escape: Deselect
+
+*** Responsive Design
+- Sidebar collapses on narrow screens
+- Graph takes full space when needed
+- Touch-friendly on tablets
+
+*** Customization Panel
+Similar to org-roam-ui's "Tweaks" panel:
+- *Layout*: Algorithm, spacing, direction
+- *Visual*: Colors, labels, animation speed
+- *Filter*: States, priorities, tags, dates
+- *Behavior*: Follow mode, auto-refresh, click action
+
+** 9. Development Workflow
+
+*** Phase 1: Core Backend (Weeks 1-2)
+1. Set up HTTP server with simple-httpd
+2. Implement WebSocket server
+3. Parse org-edna dependencies
+4. Extract task metadata
+5. Serialize to JSON
+6. Test with curl/wscat
+
+*** Phase 2: Basic Frontend (Weeks 3-4)
+1. Set up Next.js/React project
+2. WebSocket connection
+3. Basic DAG visualization
+4. Task detail panel
+5. Simple styling
+
+*** Phase 3: Interactivity (Weeks 5-6)
+1. Click to open in Emacs
+2. Filtering controls
+3. Theme synchronization
+4. Follow mode
+5. Keyboard shortcuts
+
+*** Phase 4: Advanced Features (Weeks 7-8)
+1. Multiple layout algorithms
+2. Timeline view
+3. Critical path analysis
+4. Export functionality
+5. Performance optimization
+
+*** Phase 5: Polish & Distribution (Weeks 9-10)
+1. Build pre-built static bundle
+2. Package for MELPA
+3. Documentation
+4. Screenshots/demo video
+5. Announce on r/orgmode
+
+** 10. Testing Strategy
+
+*** Backend Testing
+- Unit tests for parser (ert)
+- Integration tests with sample org files
+- WebSocket message validation
+- Performance tests with large agenda files
+
+*** Frontend Testing
+- Component tests (React Testing Library)
+- Visual regression tests (Percy/Chromatic)
+- E2E tests (Playwright/Cypress)
+- Cross-browser compatibility
+
+*** Integration Testing
+- Full stack tests (Emacs + Browser)
+- WebSocket message flow
+- Real-time updates
+- Error handling
+
+* Key Differences from org-roam-ui
+
+While we adopt many patterns from org-roam-ui, org-edna-graph has different requirements:
+
+** Graph Type
+- *org-roam-ui*: Network graph (many-to-many relationships)
+- *org-edna-graph*: Directed Acyclic Graph (hierarchical dependencies)
+- *Impact*: Different visualization library needed
+
+** Data Source
+- *org-roam-ui*: SQLite database (fast queries)
+- *org-edna-graph*: Parse org files directly (slower, but more flexible)
+- *Impact*: More caching needed, incremental parsing
+
+** User Intent
+- *org-roam-ui*: Exploration and discovery
+- *org-edna-graph*: Planning and execution tracking
+- *Impact*: Need timeline view, critical path, status tracking
+
+** Update Frequency
+- *org-roam-ui*: Occasional (when switching notes)
+- *org-edna-graph*: Frequent (as tasks change state)
+- *Impact*: More efficient delta updates needed
+
+** Graph Size
+- *org-roam-ui*: Can be thousands of nodes
+- *org-edna-graph*: Typically <100 tasks per project
+- *Impact*: Performance less critical, but still important
+
+* Implementation Priorities
+
+** Priority 1: Must Have (MVP)
+1. Elisp backend that parses org-edna
+2. WebSocket communication
+3. Basic DAG visualization
+4. Click to open task
+5. Theme sync
+
+** Priority 2: Should Have (v1.0)
+1. Follow mode
+2. Filtering by state/priority/tags
+3. Task detail panel
+4. Multiple file scope
+5. Pre-built bundle for MELPA
+
+** Priority 3: Nice to Have (v1.1+)
+1. Timeline view
+2. Critical path analysis
+3. Visual dependency editing
+4. Export functionality
+5. Multiple layouts
+
+** Priority 4: Future Exploration (v2.0+)
+1. Task creation from graph
+2. Gantt chart integration
+3. Resource allocation view
+4. Calendar integration
+5. Mobile app
+
+* Conclusion
+
+By adopting org-roam-ui's proven dual-architecture pattern while adapting it for task dependency visualization, org-edna-graph can provide a powerful, user-friendly tool for managing complex org-edna workflows. The key is to:
+
+1. *Leverage Emacs' strengths*: Data access, org-mode integration
+2. *Leverage browser's strengths*: Modern visualization, interactivity
+3. *Keep it simple*: Start with MVP, iterate based on feedback
+4. *Make it easy*: Pre-built bundle, simple installation
+5. *Keep it fast*: Efficient parsing, smart caching, optimized rendering
+
+The org-roam-ui codebase provides an excellent reference implementation that can be adapted for org-edna-graph's specific needs.
+
+* Next Steps
+
+1. Review this document with stakeholders
+2. Validate technical approach
+3. Set up development environment
+4. Begin Phase 1 implementation
+5. Create proof-of-concept with sample org file
+
+* References
+
+- [[file:org-roam-ui-research.md][org-roam-ui Research Document]]
+- [[https://github.com/org-roam/org-roam-ui][org-roam-ui Repository]]
+- [[https://github.com/alphapapa/org-super-agenda][org-super-agenda]] (for inspiration on org-mode parsing)
+- [[https://plantuml.com/][PlantUML]] (existing requirement for compatibility)
+- [[https://graphviz.org/][GraphViz]] (existing requirement for compatibility)
