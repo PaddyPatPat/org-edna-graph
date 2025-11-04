@@ -1,0 +1,56 @@
+* Architectural Decisions for org-edna-graph
+
+This file records all major architectural decisions made during development.
+
+** Format
+Each decision should follow this structure:
+- Date
+- Decision maker (agent/person)
+- Context/Problem
+- Decision
+- Rationale
+- Consequences
+
+** Decision Log
+
+*** [2025-11-04] Documentation moved from wiki to main repository
+**** Decision maker
+Claude (initial exploration session)
+
+**** Context/Problem
+GitHub wiki is a separate repository requiring separate authorization. This complicated pushing changes and keeping documentation synchronized.
+
+**** Decision
+Move all documentation from wiki to =/docs= directory in main repository.
+
+**** Rationale
+- Keeps documentation version-controlled with code
+- Easier to maintain consistency
+- Simpler git workflow
+- Better Emacs org-mode integration
+- All in one place for contributors
+
+**** Consequences
+- Need to delete wiki after confirming documentation is complete
+- Documentation links updated to use file: protocol
+- Images remain in /images at repo root
+
+** Decision Template
+
+Copy this template for new decisions:
+
+*** [YYYY-MM-DD] Decision Title
+**** Decision maker
+Name or agent identifier
+
+**** Context/Problem
+What problem are we solving? What's the situation?
+
+**** Decision
+What did we decide to do?
+
+**** Rationale
+Why did we choose this approach?
+
+**** Consequences
+What are the implications of this decision? Trade-offs?

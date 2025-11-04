@@ -1,0 +1,231 @@
+* API Contracts Between Modules
+
+This file defines the interfaces between different modules to enable parallel development.
+
+Developers working on different modules should agree on these contracts so their code will integrate cleanly.
+
+** Module Overview
+
+#+BEGIN_SRC
+   ┌─────────────────────┐
+   │  org-edna-graph.el  │  (Main entry point / Interactive commands)
+   └──────────┬──────────┘
+              │
+       ┌──────┴────────┬─────────────┬──────────────┐
+       │               │             │              │
+       ▼               ▼             ▼              ▼
+  ┌────────┐    ┌──────────┐  ┌──────────┐   ┌─────────┐
+  │ Parser │───▶│ Builder  │─▶│PlantUML  │──▶│Renderer │
+  └────────┘    └──────────┘  │GraphViz  │   └─────────┘
+                               └──────────┘
+#+END_SRC
+
+** Parser Module (org-edna-graph-parser.el)
+
+*** Purpose
+Extract tasks and org-edna dependencies from org-mode files.
+
+*** Public Functions
+
+**** org-edna-graph-parse-file (file)
+Parse a single org file and extract task information.
+
+***** Parameters
+- file :: string - Path to org file
+
+***** Returns
+List of task objects, each with structure:
+#+BEGIN_SRC elisp
+'((id . "task-uuid")
+  (title . "Task title")
+  (todo-state . "TODO")  ; or "DONE", "IN-PROGRESS", etc.
+  (tags . ("tag1" "tag2"))
+  (scheduled . timestamp-or-nil)
+  (deadline . timestamp-or-nil)
+  (blockers . ("uuid1" "uuid2"))  ; IDs of blocking tasks
+  (triggers . ("uuid3" "uuid4"))) ; IDs of triggered tasks
+#+END_SRC
+
+**** org-edna-graph-parse-agenda-files ()
+Parse all files in org-agenda-files.
+
+***** Returns
+List of task objects (same structure as above).
+
+*** Dependencies
+- Requires: org-mode, org-edna
+- Uses: org-element API
+
+*** Notes
+- Should handle missing IDs gracefully
+- Should extract BLOCKER and TRIGGER properties
+- Should resolve org-edna syntax (ids, next-sibling, etc.)
+
+** Graph Builder Module (org-edna-graph-builder.el)
+
+*** Purpose
+Convert list of tasks into a dependency graph data structure.
+
+*** Public Functions
+
+**** org-edna-graph-build (tasks)
+Build a graph from a list of tasks.
+
+***** Parameters
+- tasks :: list - List of task objects (from parser)
+
+***** Returns
+Graph object with structure:
+#+BEGIN_SRC elisp
+'((nodes . (list-of-nodes))
+  (edges . (list-of-edges))
+  (metadata . (alist-of-graph-properties)))
+#+END_SRC
+
+Where:
+- node :: '((id . "uuid") (label . "title") (properties . alist))
+- edge :: '((from . "uuid") (to . "uuid") (type . blocker-or-trigger))
+
+**** org-edna-graph-filter (graph filter-fn)
+Filter graph nodes based on predicate function.
+
+***** Parameters
+- graph :: graph object
+- filter-fn :: function - (node) -> boolean
+
+***** Returns
+Filtered graph object
+
+*** Dependencies
+- Requires: parser module output
+
+*** Notes
+- Should detect cycles in dependency graph
+- Should handle orphaned nodes (tasks with no connections)
+- Should validate that all referenced IDs exist
+
+** Generator Modules (org-edna-graph-plantuml.el, org-edna-graph-graphviz.el)
+
+*** Purpose
+Convert graph to diagram syntax.
+
+*** Public Functions
+
+**** org-edna-graph-to-plantuml (graph &optional options)
+Generate PlantUML syntax from graph.
+
+***** Parameters
+- graph :: graph object (from builder)
+- options :: alist - Optional customization:
+  - (colors . alist) - Map todo-states to colors
+  - (direction . 'top-to-bottom|'left-to-right)
+  - (title . string)
+
+***** Returns
+String containing PlantUML source code
+
+**** org-edna-graph-to-graphviz (graph &optional options)
+Generate GraphViz/DOT syntax from graph.
+
+***** Parameters
+- graph :: graph object (from builder)
+- options :: alist - Same as PlantUML
+
+***** Returns
+String containing DOT source code
+
+*** Dependencies
+- Requires: builder module output
+
+*** Notes
+- Should handle node styling (colors, shapes)
+- Should handle edge styling (solid/dashed for blocker/trigger)
+- Should escape special characters in labels
+- Should produce valid syntax that renders without errors
+
+** Renderer Module (org-edna-graph-render.el)
+
+*** Purpose
+Convert diagram syntax to image and display it.
+
+*** Public Functions
+
+**** org-edna-graph-render (syntax format &optional output-file)
+Render diagram syntax to image.
+
+***** Parameters
+- syntax :: string - PlantUML or DOT source
+- format :: symbol - 'plantuml or 'graphviz
+- output-file :: string (optional) - Path to save image
+
+***** Returns
+- If output-file provided: writes file and returns path
+- If no output-file: displays in Emacs buffer
+
+**** org-edna-graph-display (image-file-or-buffer)
+Display image in Emacs.
+
+***** Parameters
+- image-file-or-buffer :: string or buffer
+
+***** Returns
+Buffer containing the image
+
+*** Dependencies
+- Requires: External tools (plantuml.jar or graphviz dot)
+- Requires: Emacs image display capabilities
+
+*** Notes
+- Should detect if required external tools are available
+- Should provide helpful error messages if tools missing
+- Should support both file output and buffer display
+- Should handle different image formats (PNG, SVG)
+
+** Main Module (org-edna-graph.el)
+
+*** Purpose
+User-facing commands that orchestrate all other modules.
+
+*** Public Functions (Interactive Commands)
+
+**** org-edna-graph-current-file ()
+Generate and display graph for current org file.
+
+**** org-edna-graph-agenda-files ()
+Generate and display graph for all agenda files.
+
+**** org-edna-graph-custom (files &optional filters)
+Generate graph for specified files with optional filters.
+
+*** Configuration Variables
+
+**** org-edna-graph-default-format
+Symbol: 'plantuml or 'graphviz (default: 'plantuml)
+
+**** org-edna-graph-output-directory
+String: Directory to save generated images (default: "~/.emacs.d/org-edna-graphs/")
+
+**** org-edna-graph-colors
+Alist: Maps todo states to colors
+Default: '(("TODO" . "#FF6B6B") ("DONE" . "#51CF66") ...)
+
+*** Dependencies
+- Requires: All other modules
+
+** Testing Contracts
+
+Each module should provide:
+- Unit tests in test/MODULE-NAME-test.el
+- Test fixtures in test/fixtures/
+- Tests should not depend on external state
+- Tests should use ert (Emacs Lisp Regression Testing)
+
+** Change Management
+
+If you need to change a contract:
+1. Document the proposed change in questions.org
+2. Assess impact on dependent modules
+3. Update this file with the new contract
+4. Update affected modules
+5. Update tests
+6. Document decision in decisions.org

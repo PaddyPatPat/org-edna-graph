@@ -1,0 +1,81 @@
+* Questions and Open Issues
+
+This file tracks questions that arise during development and their resolutions.
+
+** Active Questions
+
+Questions that need answers before work can proceed.
+
+*** TODO Should we support both PlantUML and GraphViz or choose one?
+**** Context
+The requirements mention "PlantUML or GraphViz" but don't specify which to prioritize.
+
+**** Impact
+Affects implementation scope and testing burden.
+
+**** Discussion
+- PlantUML pros: Higher-level syntax, easier for simple diagrams
+- GraphViz pros: More control, better for complex graphs, more widely available
+- Could implement both and let user choose via configuration
+
+**** Resolution
+(To be filled in after decision is made)
+
+*** TODO What should be the minimum Emacs version requirement?
+**** Context
+Need to determine compatibility target.
+
+**** Impact
+Affects which Emacs Lisp features we can use.
+
+**** Discussion
+- org-edna requires Emacs 26.1+
+- Modern Emacs Lisp features (like threading macros) require 25.1+
+- Most users are on 27.1+ now (as of 2025)
+
+**** Resolution
+(To be filled in)
+
+*** TODO How should we handle very large dependency graphs?
+**** Context
+If a user has hundreds of tasks, the graph could be overwhelming.
+
+**** Impact
+Affects rendering strategy and user experience.
+
+**** Discussion
+Possible approaches:
+- Filter by date range (only show tasks due within X days)
+- Filter by tag/category
+- Filter by depth (only show N levels of dependencies)
+- Use interactive/zoomable visualization
+
+**** Resolution
+(To be filled in)
+
+** Resolved Questions
+
+Questions that have been answered.
+
+*** DONE Where should documentation live - wiki or main repo?
+CLOSED: [2025-11-04]
+
+**** Resolution
+Main repository in =/docs= directory. See decisions.org for full rationale.
+
+** Question Template
+
+Copy this for new questions:
+
+*** TODO Question Title
+**** Context
+Background information about the question.
+
+**** Impact
+Why does this matter? What's blocked by not knowing the answer?
+
+**** Discussion
+Pros/cons of different approaches, research findings, opinions.
+
+**** Resolution
+Final decision and who made it. Move to "Resolved Questions" when answered.

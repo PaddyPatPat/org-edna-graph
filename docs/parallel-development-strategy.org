@@ -1,0 +1,416 @@
+* Parallel Development Strategy for org-edna-graph
+
+This document outlines how work on this project can be parallelized across multiple Claude agents/sessions, and defines specialized repository agents for efficient development.
+
+** Specialized Repository Agents
+
+These agents should be created to provide deep expertise on related repositories:
+
+*** Agent: org-edna-expert
+**** Purpose
+Deep understanding of the org-edna package - its API, data structures, and functionality.
+
+**** Repository
+https://savannah.nongnu.org/projects/org-edna-el/ or https://sr.ht/~bzg/org-edna/
+
+**** Key Questions This Agent Should Answer
+- How does org-edna store dependency information?
+- What are the BLOCKER and TRIGGER property formats?
+- How does org-edna parse and evaluate conditions?
+- What functions/APIs are available for querying dependencies?
+- How does org-edna handle scheduled dates and timestamps?
+- What is the internal data structure for dependency graphs?
+
+**** Deliverable
+A comprehensive document: =docs/org-edna-api-reference.org= containing:
+- API function reference
+- Data structure documentation
+- Property format specifications
+- Example usage patterns
+- Integration points for our package
+
+*** Agent: lytex-org-graph-edna-expert
+**** Purpose
+Deep understanding of the lytex/org-graph-edna implementation approach.
+
+**** Repository
+https://github.com/lytex/org-graph-edna
+
+**** Key Questions This Agent Should Answer
+- How does it query org files for blockers?
+- How does it generate PlantUML syntax?
+- What parsing strategy does it use?
+- How does it handle node colors and styling?
+- What are the limitations we need to overcome?
+- What code can we reuse or learn from?
+
+**** Deliverable
+A comprehensive document: =docs/lytex-implementation-analysis.org= containing:
+- Code architecture analysis
+- Key functions and their purposes
+- PlantUML generation approach
+- Gaps and improvement opportunities
+- Recommended code patterns to adopt
+
+*** Agent: plantuml-graphviz-expert
+**** Purpose
+Understanding diagram generation tools (PlantUML and GraphViz).
+
+**** Focus Areas
+- PlantUML documentation and syntax
+- GraphViz documentation and syntax
+- Emacs integration approaches
+- Image generation workflows
+
+**** Key Questions This Agent Should Answer
+- What's the best syntax for our use case?
+- How to represent task dependencies visually?
+- How to add colors, labels, and metadata?
+- How to generate images from within Emacs?
+- Performance considerations for large graphs?
+- Which tool is better for our needs?
+
+**** Deliverable
+A comprehensive document: =docs/diagram-generation-guide.org= containing:
+- Comparison of PlantUML vs GraphViz for our use case
+- Syntax examples for task dependency graphs
+- Emacs integration methods
+- Recommended approach with rationale
+
+** Parallelizable Development Tasks
+
+These tasks can be worked on simultaneously by different agents/sessions:
+
+*** Task Group A: Research & Analysis (Can Start Immediately)
+
+**** Task A1: org-edna Deep Dive
+***** Agent
+org-edna-expert (specialized)
+
+***** Description
+Clone and analyze the org-edna repository to understand its internals.
+
+***** Deliverable
+=docs/org-edna-api-reference.org=
+
+***** Estimated Complexity
+Medium - requires reading Emacs Lisp code
+
+***** Dependencies
+None
+
+**** Task A2: lytex/org-graph-edna Analysis
+***** Agent
+lytex-org-graph-edna-expert (specialized)
+
+***** Description
+Clone and analyze the lytex implementation in detail.
+
+***** Deliverable
+=docs/lytex-implementation-analysis.org=
+
+***** Estimated Complexity
+Medium - requires reading Emacs Lisp code
+
+***** Dependencies
+None
+
+**** Task A3: Diagram Tool Research
+***** Agent
+plantuml-graphviz-expert (specialized)
+
+***** Description
+Research PlantUML and GraphViz for our specific use case.
+
+***** Deliverable
+=docs/diagram-generation-guide.org=
+
+***** Estimated Complexity
+Low-Medium - mostly documentation review
+
+***** Dependencies
+None
+
+*** Task Group B: Design & Architecture (Can Start After Group A)
+
+**** Task B1: Data Structure Design
+***** Agent
+General-purpose or architecture specialist
+
+***** Description
+Design the internal data structures for representing task dependency graphs.
+
+***** Deliverable
+=docs/architecture/data-structures.org=
+
+***** Estimated Complexity
+Medium
+
+***** Dependencies
+Task A1 (org-edna understanding)
+
+**** Task B2: Module Architecture
+***** Agent
+General-purpose or architecture specialist
+
+***** Description
+Design the overall package structure, modules, and their responsibilities.
+
+***** Deliverable
+=docs/architecture/module-design.org=
+
+***** Estimated Complexity
+Medium
+
+***** Dependencies
+Tasks A1, A2, A3
+
+**** Task B3: User Interface Design
+***** Agent
+General-purpose
+
+***** Description
+Design the interactive functions, commands, and user workflows.
+
+***** Deliverable
+=docs/architecture/user-interface.org=
+
+***** Estimated Complexity
+Low-Medium
+
+***** Dependencies
+Task B2
+
+*** Task Group C: Implementation (Can Start After Group B)
+
+**** Task C1: Parser Module
+***** Agent
+Implementation specialist
+
+***** Description
+Implement org file parsing and org-edna property extraction.
+
+***** Deliverable
+=org-edna-graph-parser.el=
+
+***** Estimated Complexity
+High
+
+***** Dependencies
+Tasks A1, B1, B2
+
+**** Task C2: Graph Builder Module
+***** Agent
+Implementation specialist
+
+***** Description
+Build the dependency graph data structure from parsed data.
+
+***** Deliverable
+=org-edna-graph-builder.el=
+
+***** Estimated Complexity
+Medium-High
+
+***** Dependencies
+Tasks B1, B2, C1
+
+**** Task C3: PlantUML Generator Module
+***** Agent
+Implementation specialist
+
+***** Description
+Generate PlantUML syntax from the dependency graph.
+
+***** Deliverable
+=org-edna-graph-plantuml.el=
+
+***** Estimated Complexity
+Medium
+
+***** Dependencies
+Tasks A3, B1, B2, C2
+
+**** Task C4: GraphViz Generator Module
+***** Agent
+Implementation specialist
+
+***** Description
+Generate GraphViz syntax from the dependency graph.
+
+***** Deliverable
+=org-edna-graph-graphviz.el=
+
+***** Estimated Complexity
+Medium
+
+***** Dependencies
+Tasks A3, B1, B2, C2
+
+**** Task C5: Image Renderer Module
+***** Agent
+Implementation specialist
+
+***** Description
+Handle image generation and display in Emacs.
+
+***** Deliverable
+=org-edna-graph-render.el=
+
+***** Estimated Complexity
+Medium
+
+***** Dependencies
+Tasks C3 or C4, B2
+
+**** Task C6: Interactive Commands Module
+***** Agent
+Implementation specialist
+
+***** Description
+Implement user-facing interactive commands.
+
+***** Deliverable
+=org-edna-graph.el= (main entry point)
+
+***** Estimated Complexity
+Medium
+
+***** Dependencies
+Tasks B3, C1-C5
+
+*** Task Group D: Supporting Work (Can Run in Parallel)
+
+**** Task D1: Example Org Files
+***** Agent
+General-purpose or documentation specialist
+
+***** Description
+Create example org-mode files with various org-edna dependency patterns for testing.
+
+***** Deliverable
+=examples/= directory with multiple .org files
+
+***** Estimated Complexity
+Low
+
+***** Dependencies
+Task A1 (understanding org-edna syntax)
+
+**** Task D2: Package Infrastructure
+***** Agent
+General-purpose
+
+***** Description
+Set up package.el metadata, autoloads, and installation support.
+
+***** Deliverable
+Package headers in all .el files, autoload cookies
+
+***** Estimated Complexity
+Low
+
+***** Dependencies
+Task B2
+
+**** Task D3: Test Suite
+***** Agent
+Testing specialist
+
+***** Description
+Write unit tests for parser, graph builder, and generators.
+
+***** Deliverable
+=test/= directory with test files
+
+***** Estimated Complexity
+Medium-High
+
+***** Dependencies
+Tasks C1-C6 (or can be done incrementally alongside)
+
+**** Task D4: User Documentation
+***** Agent
+Documentation specialist
+
+***** Description
+Write user-facing documentation (installation, usage, examples).
+
+***** Deliverable
+=docs/user-guide.org=
+
+***** Estimated Complexity
+Medium
+
+***** Dependencies
+Tasks B3, C6
+
+** Recommended Execution Plan
+
+*** Phase 1: Research (Fully Parallel)
+Launch 3 specialized agents simultaneously:
+1. org-edna-expert → Task A1
+2. lytex-org-graph-edna-expert → Task A2
+3. plantuml-graphviz-expert → Task A3
+
+Expected Duration: 1-2 sessions each
+
+*** Phase 2: Design (Partially Parallel)
+Launch 2 agents:
+1. Architecture agent → Tasks B1, B2
+2. General agent → Task D1 (examples)
+
+Expected Duration: 1 session each
+
+*** Phase 3: Implementation (Highly Parallel)
+Launch 4-6 agents simultaneously:
+1. Parser specialist → Task C1
+2. Graph builder specialist → Task C2
+3. PlantUML specialist → Task C3
+4. GraphViz specialist → Task C4
+5. Renderer specialist → Task C5
+6. Interface specialist → Task C6
+
+Expected Duration: 2-3 sessions each
+
+*** Phase 4: Integration & Polish (Sequential)
+1. Integration agent → Combine all modules
+2. Testing agent → Task D3
+3. Documentation agent → Task D4
+
+Expected Duration: 2-3 sessions total
+
+** Agent Communication
+
+Since Claude agents can't directly communicate, use this repository's documentation:
+
+*** Shared Information Files
+- =docs/decisions.org= - Record all architectural decisions
+- =docs/api-contracts.org= - Define interfaces between modules
+- =docs/progress.org= - Track completion status of all tasks
+- =docs/questions.org= - Log questions that need answering
+
+*** Workflow
+1. Each agent reads relevant docs before starting
+2. Each agent updates progress.org when completing work
+3. Each agent logs decisions in decisions.org
+4. Each agent logs questions in questions.org
+5. Next agent reviews these files before continuing
+
+** Estimated Timeline
+
+- Phase 1 (Research): 1-2 days with parallel agents
+- Phase 2 (Design): 1 day
+- Phase 3 (Implementation): 3-5 days with parallel agents
+- Phase 4 (Polish): 1-2 days
+
+Total: ~1-2 weeks with aggressive parallelization vs. 3-4 weeks sequential.
+
+** Success Criteria
+
+- All specialized agents complete their deliverables
+- Architecture is documented and agreed upon
+- All implementation modules pass tests
+- Package installs cleanly via straight.el
+- Interactive function generates diagrams successfully
+- Documentation is complete and clear
