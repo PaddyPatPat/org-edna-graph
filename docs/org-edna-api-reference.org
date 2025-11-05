@@ -1,0 +1,1692 @@
+#+TITLE: Org-Edna API Reference
+#+AUTHOR: org-edna-expert agent
+#+DATE: [2025-11-04]
+
+* Overview
+
+** What is Org-Edna?
+
+Org-Edna is an Emacs package providing "Extensible Dependencies 'N' Actions" for Org mode. It enables sophisticated task dependency management and automated task workflows through the =BLOCKER= and =TRIGGER= properties.
+
+** Core Purpose
+
+- Define blocking conditions that must be fulfilled before completing a task
+- Specify automated actions to execute when a task transitions to DONE
+- Provide extensible framework for custom dependency logic
+
+** Architecture
+
+Org-Edna uses a three-stage processing pipeline:
+
+1. *String Form*: User-visible syntax in =BLOCKER= and =TRIGGER= properties
+2. *S-expression Form*: Intermediate representation for parsing
+3. *Lisp Form*: Evaluable Emacs Lisp code
+
+The execution model follows the pattern:
+: FINDER → [TARGETS] → CONDITION/ACTION → RESULT
+
+** Requirements
+
+- Emacs: 25.1+
+- seq: 2.19+
+- org: 9.0.5+
+
+* Property Formats
+
+** Basic Syntax
+
+Properties follow the pattern: =KEYWORD(ARG1 ARG2 ...)=
+
+Arguments can be:
+- *Symbols*: unquoted identifiers (e.g., =todo=, =forward=)
+- *Strings*: quoted text (e.g., ="hello"=, ="project"=)
+- *Numbers*: integers or floats (e.g., =0.5=, =42=, =+1e3=)
+- *UUIDs*: unquoted identifiers recognized as org-id (e.g., =0d491588-7da3-43c5-b51a-87fbd34f79f7=)
+
+Parentheses are optional for commands without arguments.
+
+** BLOCKER Property
+
+The =BLOCKER= property specifies conditions that prevent task completion.
+
+*** Default Behavior
+
+A blocker blocks the current task if ANY target meets the blocking condition.
+
+*** Examples
+
+#+BEGIN_SRC org
+,* TODO Task A
+  :PROPERTIES:
+  :BLOCKER:  previous-sibling
+  :END:
+
+,* TODO Task B
+  :PROPERTIES:
+  :BLOCKER:  ids("0d491588-7da3-43c5-b51a-87fbd34f79f7")
+  :END:
+
+,* TODO Task C
+  :PROPERTIES:
+  :BLOCKER:  match("project") !done?
+  :END:
+
+,* TODO Task D
+  :PROPERTIES:
+  :BLOCKER:  siblings todo-state?("TODO" "NEXT")
+  :END:
+#+END_SRC
+
+** TRIGGER Property
+
+The =TRIGGER= property defines actions to execute when marking a task as DONE.
+
+*** Examples
+
+#+BEGIN_SRC org
+,* TODO Wash clothes
+  SCHEDULED: <2017-04-08 Sat 09:00>
+  :PROPERTIES:
+  :TRIGGER:  next-sibling scheduled!("++1h")
+  :END:
+
+,* TODO Start project phase 2
+  :PROPERTIES:
+  :TRIGGER:  ids("phase-2-id") todo!(NEXT) scheduled!("Mon 09:00")
+  :END:
+
+,* TODO Complete checklist
+  :PROPERTIES:
+  :TRIGGER:  match("checklist") todo!(DONE)
+  :END:
+
+,* TODO Increment counter
+  :PROPERTIES:
+  :TRIGGER:  self set-property!("COUNT" inc)
+  :END:
+#+END_SRC
+
+** Combined BLOCKER and TRIGGER
+
+#+BEGIN_SRC org
+,* TODO Task with dependencies
+  :PROPERTIES:
+  :BLOCKER:  siblings !done?
+  :TRIGGER:  next-sibling todo!(TODO) scheduled!("++1d")
+  :END:
+#+END_SRC
+
+* Finders
+
+Finders specify locations (targets) to test conditions or perform actions.
+
+** Finder Syntax
+
+All finders follow the pattern: =finder-name(options...)=
+
+** Available Finders
+
+*** self
+
+Returns the current heading.
+
+#+BEGIN_SRC org
+:TRIGGER:  self todo!(DONE)
+#+END_SRC
+
+*** ids
+
+Find headings by UUID.
+
+#+BEGIN_SRC org
+:BLOCKER:  ids("uuid-1" "uuid-2" "uuid-3")
+:BLOCKER:  ids("id:uuid-1")  ; Alternative syntax with id: prefix
+#+END_SRC
+
+*Implementation*: Uses =org-id-find= to resolve UUIDs to markers.
+
+*** next-sibling / previous-sibling
+
+Find adjacent siblings at the same outline level.
+
+#+BEGIN_SRC org
+:BLOCKER:  previous-sibling
+:TRIGGER:  next-sibling scheduled!("++1h")
+#+END_SRC
+
+*Note*: Returns nil if no sibling exists in that direction.
+
+*** siblings
+
+Find all siblings of the current heading.
+
+#+BEGIN_SRC org
+:BLOCKER:  siblings !done?
+:TRIGGER:  siblings todo!(DONE)
+#+END_SRC
+
+*** parent
+
+Find the parent heading.
+
+#+BEGIN_SRC org
+:BLOCKER:  parent done?
+#+END_SRC
+
+*** children / descendants
+
+Find child or all descendant headings.
+
+#+BEGIN_SRC org
+:BLOCKER:  children !done?
+:TRIGGER:  descendants tag!("archived")
+#+END_SRC
+
+*** ancestors
+
+Find all parent headings up to the root.
+
+#+BEGIN_SRC org
+:BLOCKER:  ancestors todo-state?("BLOCKED")
+#+END_SRC
+
+*** match
+
+Find headings matching an Org match string (tags/properties query).
+
+#+BEGIN_SRC org
+:BLOCKER:  match("project&TODO")
+:TRIGGER:  match("daily") scheduled!("++1d")
+#+END_SRC
+
+*Implementation*: Uses =org-map-entries= with the match string.
+
+*** relatives / chain-find
+
+Generic relative finder with selection, filtering, and sorting.
+
+Syntax: =relatives(SELECTION FILTER... SORTING)=
+
+*Selection options* (one of):
+- =forward-no-wrap=: Next siblings, no wrap
+- =forward=: Next siblings with wrap
+- =backward-no-wrap=: Previous siblings, no wrap
+- =backward=: Previous siblings with wrap
+- =siblings=: All siblings
+- =children=: Direct children
+- =descendants=: All descendants
+- =N=: Nth relative (number)
+
+*Filter options* (multiple allowed):
+- =todo-only=: Only TODO entries
+- =no-comment=: Exclude commented headings
+- =regexp("PATTERN")=: Match heading text
+- =has-tags?("tag1" "tag2")=: Must have specified tags
+
+*Sorting options* (one of):
+- =priority-up/priority-down=
+- =effort-up/effort-down=
+- =scheduled-up/scheduled-down=
+- =deadline-up/deadline-down=
+- =timestamp-up/timestamp-down=
+
+#+BEGIN_SRC org
+:BLOCKER:  relatives(siblings todo-only priority-down) !done?
+:TRIGGER:  relatives(forward-no-wrap 1) todo!(NEXT)
+#+END_SRC
+
+*** olp / org-file
+
+Find by outline path or file path.
+
+#+BEGIN_SRC org
+:BLOCKER:  olp("Projects" "Work" "Current Sprint")
+:TRIGGER:  org-file("~/org/project.org" "Task Name")
+#+END_SRC
+
+*** file
+
+Find file by name.
+
+#+BEGIN_SRC org
+:BLOCKER:  file("~/org/blockers.org") headings?
+#+END_SRC
+
+** Finder Return Value
+
+All finders *must* return:
+- A list of markers (one per target found), OR
+- =nil= if no targets found
+
+#+BEGIN_SRC elisp
+;; Example finder implementation
+(defun org-edna-finder/my-finder ()
+  (list (point-marker)))
+#+END_SRC
+
+* Conditions
+
+Conditions test whether targets meet blocking criteria. All conditions end with =?=.
+
+** Condition Behavior
+
+- Return a *string* to block (the string describes why blocking occurs)
+- Return =nil= to NOT block
+
+** Negation
+
+Prefix with =!= to negate:
+
+#+BEGIN_SRC org
+:BLOCKER:  siblings !done?      ; Block if any sibling is NOT done
+:BLOCKER:  match("bug") !todo-state?("FIXED")  ; Block if any bug is not FIXED
+#+END_SRC
+
+** Available Conditions
+
+*** done?
+
+Default condition. Tests if targets are marked DONE.
+
+#+BEGIN_SRC org
+:BLOCKER:  ids("task-1" "task-2") done?
+#+END_SRC
+
+*** todo-state?
+
+Check if target has specific TODO keyword(s).
+
+#+BEGIN_SRC org
+:BLOCKER:  siblings todo-state?("TODO" "NEXT")
+:BLOCKER:  match("project") !todo-state?("DONE" "CANCELLED")
+#+END_SRC
+
+*** headings?
+
+Check if file/target contains any headings.
+
+#+BEGIN_SRC org
+:BLOCKER:  file("~/org/tasks.org") headings?
+#+END_SRC
+
+*** has-property?
+
+Test property values. Supports exact match or numeric comparison.
+
+#+BEGIN_SRC org
+:BLOCKER:  self has-property?("READY" "yes")
+:BLOCKER:  previous-sibling !has-property?("COUNT" "3")
+#+END_SRC
+
+*Special values*:
+- =inc=: Increment numeric value
+- =dec=: Decrement numeric value
+
+*** has-tags?
+
+Check if target has specified tags.
+
+#+BEGIN_SRC org
+:BLOCKER:  siblings has-tags?("urgent" "bug")
+#+END_SRC
+
+*** re-search?
+
+Perform regex search in target heading/content.
+
+#+BEGIN_SRC org
+:BLOCKER:  match("notes") re-search?("TODO.*URGENT")
+#+END_SRC
+
+*** matches?
+
+Evaluate Org match string against target.
+
+#+BEGIN_SRC org
+:BLOCKER:  siblings matches?("priority=\"A\"")
+#+END_SRC
+
+*** variable-set?
+
+Evaluate arbitrary Lisp expression.
+
+#+BEGIN_SRC org
+:BLOCKER:  self variable-set?((> (random 10) 5))
+#+END_SRC
+
+** Consideration Modifiers
+
+Control how multiple targets are evaluated. Must appear BEFORE conditions.
+
+*** consider(any)
+
+Default. Block if ANY target meets condition.
+
+#+BEGIN_SRC org
+:BLOCKER:  consider(any) siblings !done?
+#+END_SRC
+
+*** consider(all)
+
+Block only if ALL targets meet condition.
+
+#+BEGIN_SRC org
+:BLOCKER:  consider(all) siblings !done?
+#+END_SRC
+
+*** consider(N)
+
+Block if at least N targets meet condition.
+
+#+BEGIN_SRC org
+:BLOCKER:  consider(2) siblings !done?  ; Block if 2+ siblings not done
+#+END_SRC
+
+*** consider(FRACTION)
+
+Block if at least FRACTION of targets meet condition.
+
+#+BEGIN_SRC org
+:BLOCKER:  consider(0.5) siblings !done?  ; Block if 50%+ not done
+#+END_SRC
+
+** Condition Function Signature
+
+#+BEGIN_SRC elisp
+(defun org-edna-condition/my-condition? (neg &rest args)
+  "Test condition. If NEG is non-nil, negate the result.
+Return blocking string if should block, nil otherwise."
+  (let ((condition (my-test-logic args)))
+    (when (org-xor condition neg)
+      "Blocking because my-condition failed")))
+#+END_SRC
+
+* Actions
+
+Actions modify targets when a heading is marked DONE. All actions end with =!=.
+
+** Available Actions
+
+*** todo!
+
+Change TODO state.
+
+#+BEGIN_SRC org
+:TRIGGER:  next-sibling todo!(NEXT)
+:TRIGGER:  siblings todo!(DONE)
+:TRIGGER:  match("project") todo!(TODO)
+#+END_SRC
+
+*** scheduled! / deadline!
+
+Set scheduling or deadline timestamps.
+
+*Timestamp formats*:
+- Absolute: ="Mon 09:00"=, ="2025-11-04 Mon"=
+- Relative: ="++1d"=, ="++2w"=, ="++1h"=
+- Copy: ="copy"= (copy from source heading)
+- Float: ="float"= (schedule relative to today)
+
+#+BEGIN_SRC org
+:TRIGGER:  next-sibling scheduled!("++1d")
+:TRIGGER:  ids("task-id") deadline!("Mon 17:00")
+:TRIGGER:  siblings scheduled!("float")
+#+END_SRC
+
+*Repeater behavior*:
+- =+1d=: Shift by 1 day from previous
+- =++1d=: Shift to next future occurrence
+- =.+1d=: Shift by 1 day from today
+
+*** tag!
+
+Add tags to target.
+
+#+BEGIN_SRC org
+:TRIGGER:  self tag!("completed" "verified")
+:TRIGGER:  siblings tag!("waiting")
+#+END_SRC
+
+*** set-property! / delete-property!
+
+Modify properties.
+
+#+BEGIN_SRC org
+:TRIGGER:  self set-property!("STATUS" "Complete")
+:TRIGGER:  self set-property!("COUNT" inc)
+:TRIGGER:  self set-property!("COUNT" dec)
+:TRIGGER:  siblings delete-property!("BLOCKER")
+#+END_SRC
+
+*Special values*:
+- =inc=: Increment numeric property
+- =dec=: Decrement numeric property
+
+*** set-priority!
+
+Set or adjust priority.
+
+#+BEGIN_SRC org
+:TRIGGER:  next-sibling set-priority!("A")
+:TRIGGER:  self set-priority!(up)
+:TRIGGER:  self set-priority!(down)
+#+END_SRC
+
+*** set-effort!
+
+Set effort estimate.
+
+#+BEGIN_SRC org
+:TRIGGER:  ids("task-id") set-effort!("2:30")
+#+END_SRC
+
+*** clock-in! / clock-out!
+
+Control time tracking.
+
+#+BEGIN_SRC org
+:TRIGGER:  next-sibling clock-in!
+:TRIGGER:  self clock-out!
+#+END_SRC
+
+*** archive!
+
+Archive the target.
+
+#+BEGIN_SRC org
+:TRIGGER:  self archive!
+#+END_SRC
+
+*Configuration*: =org-edna-prompt-for-archive= controls confirmation prompt.
+
+*** chain!
+
+Copy properties from source to targets.
+
+#+BEGIN_SRC org
+:TRIGGER:  next-sibling chain!("BLOCKER" "TRIGGER")
+#+END_SRC
+
+** Action Function Signature
+
+#+BEGIN_SRC elisp
+(defun org-edna-action/my-action! (last-entry &rest args)
+  "Perform action. LAST-ENTRY is marker for source heading.
+ARGS are the user-provided arguments.
+Action executes at point of current target."
+  (goto-char last-entry)  ; Move to source if needed
+  (my-action-logic args))
+#+END_SRC
+
+* Control Flow
+
+** Conditional Forms
+
+Syntax: =if CONDITION then THEN-BLOCK else ELSE-BLOCK endif=
+
+The =else= clause is optional.
+
+#+BEGIN_SRC org
+:TRIGGER:  if self todo-state?("COMPLETE") then self set-property!("VERIFIED" "yes") endif
+
+:TRIGGER:  if match("checklist") done? then next-sibling todo!(TODO) else self todo!(WAITING) endif
+
+:TRIGGER:  if siblings !done? then self todo!(WAITING) else self archive! endif
+#+END_SRC
+
+** Multiple Actions
+
+Separate multiple actions with whitespace:
+
+#+BEGIN_SRC org
+:TRIGGER:  next-sibling todo!(NEXT) scheduled!("++1d") set-priority!("A")
+#+END_SRC
+
+** Multiple Finders
+
+Chain multiple finder-action pairs:
+
+#+BEGIN_SRC org
+:TRIGGER:  self set-property!("DONE_DATE" "<today>") next-sibling todo!(NEXT)
+#+END_SRC
+
+* API Functions
+
+** Setup
+
+#+BEGIN_SRC elisp
+;; Load org-edna
+(require 'org-edna)
+(org-edna-load)
+
+;; Unload org-edna
+(org-edna-unload)
+#+END_SRC
+
+** Parsing Functions
+
+*** org-edna-parse-string-form
+
+Parse string into tokens.
+
+#+BEGIN_SRC elisp
+(org-edna-parse-string-form "next-sibling todo!(NEXT)")
+; => List of tokens
+#+END_SRC
+
+*** org-edna-string-form-to-sexp-form
+
+Convert string property to s-expression.
+
+#+BEGIN_SRC elisp
+(org-edna-string-form-to-sexp-form
+  "match(\"project\") !done?"
+  'blocker)
+; => S-expression representation
+#+END_SRC
+
+*Parameters*:
+- =string-form=: Property value as string
+- =action-or-condition=: Symbol ='blocker= or ='trigger=
+
+*** org-edna-break-modifier
+
+Extract modifier character from token.
+
+#+BEGIN_SRC elisp
+(org-edna-break-modifier "!done?")
+; => (cons "!" "done?")
+
+(org-edna-break-modifier "todo!")
+; => (cons "" "todo!")
+#+END_SRC
+
+** Processing Functions
+
+*** org-edna-process-form
+
+Main entry point for evaluating forms.
+
+#+BEGIN_SRC elisp
+(org-edna-process-form form action-or-condition)
+#+END_SRC
+
+*Parameters*:
+- =form=: S-expression form to evaluate
+- =action-or-condition=: Symbol ='blocker= or ='trigger=
+
+*** org-edna-eval-sexp-form
+
+Execute normalized s-expression form.
+
+#+BEGIN_SRC elisp
+(org-edna-eval-sexp-form sexp-form action-or-condition)
+#+END_SRC
+
+** Hook Functions
+
+*** org-edna-trigger-function
+
+Called when heading changes to DONE state.
+
+#+BEGIN_SRC elisp
+;; Added to org-trigger-hook by org-edna-load
+(add-hook 'org-trigger-hook #'org-edna-trigger-function)
+#+END_SRC
+
+*** org-edna-blocker-function
+
+Called to check if heading is blocked.
+
+#+BEGIN_SRC elisp
+;; Added to org-blocker-hook by org-edna-load
+(add-hook 'org-blocker-hook #'org-edna-blocker-function)
+#+END_SRC
+
+** Interactive Commands
+
+*** org-edna-edit
+
+Edit =BLOCKER= and =TRIGGER= properties in dedicated buffer with completion.
+
+#+BEGIN_SRC elisp
+M-x org-edna-edit
+#+END_SRC
+
+*** org-edna-reset-cache
+
+Manually reset the finder cache.
+
+#+BEGIN_SRC elisp
+M-x org-edna-reset-cache
+#+END_SRC
+
+** Query Functions for Integration
+
+*** Extracting Dependencies Programmatically
+
+#+BEGIN_SRC elisp
+(defun my-get-edna-dependencies ()
+  "Get BLOCKER and TRIGGER properties of heading at point."
+  (org-entry-get nil "BLOCKER")   ; Returns BLOCKER string or nil
+  (org-entry-get nil "TRIGGER"))  ; Returns TRIGGER string or nil
+
+(defun my-parse-edna-property (property-value type)
+  "Parse org-edna property.
+PROPERTY-VALUE: String value of BLOCKER or TRIGGER
+TYPE: Symbol 'blocker or 'trigger"
+  (when property-value
+    (org-edna-string-form-to-sexp-form property-value type)))
+
+;; Example: Get all tasks with org-edna properties
+(defun my-find-all-edna-tasks ()
+  "Find all headings with BLOCKER or TRIGGER properties."
+  (org-map-entries
+   (lambda ()
+     (let ((blocker (org-entry-get nil "BLOCKER"))
+           (trigger (org-entry-get nil "TRIGGER"))
+           (id (org-id-get-create)))
+       (when (or blocker trigger)
+         (list :id id
+               :heading (org-get-heading t t t t)
+               :blocker blocker
+               :trigger trigger
+               :marker (point-marker)))))
+   nil 'agenda))  ; Search in agenda files
+#+END_SRC
+
+*** Resolving Target References
+
+#+BEGIN_SRC elisp
+;; Resolve a UUID to its location
+(org-id-find "uuid-string" 'marker)  ; Returns marker or nil
+
+;; Get heading at marker
+(defun my-get-heading-at-marker (marker)
+  "Get heading text at MARKER."
+  (org-with-point-at marker
+    (org-get-heading t t t t)))
+
+;; Check if heading is DONE
+(defun my-heading-done-p (marker)
+  "Check if heading at MARKER is DONE."
+  (org-with-point-at marker
+    (member (org-get-todo-state) org-done-keywords)))
+#+END_SRC
+
+*** Extracting Finder Targets
+
+#+BEGIN_SRC elisp
+;; Call a finder function directly
+(defun my-call-finder (finder-name &rest args)
+  "Call org-edna finder FINDER-NAME with ARGS."
+  (let ((func (intern (format "org-edna-finder/%s" finder-name))))
+    (when (fboundp func)
+      (apply func args))))
+
+;; Example: Get siblings
+(defun my-get-siblings ()
+  "Get markers for all siblings of current heading."
+  (my-call-finder "siblings"))
+
+;; Example: Get targets from match
+(defun my-get-match-targets (match-string)
+  "Get markers for headings matching MATCH-STRING."
+  (my-call-finder "match" match-string))
+#+END_SRC
+
+* Data Structures
+
+** Internal Representation
+
+*** Markers
+
+Org-edna uses Emacs markers as the fundamental data structure for tracking headings.
+
+#+BEGIN_SRC elisp
+;; Marker properties
+(markerp marker)           ; => t
+(marker-buffer marker)     ; => #<buffer file.org>
+(marker-position marker)   ; => 1234
+#+END_SRC
+
+*** Cache Structure
+
+When caching is enabled (=org-edna-finder-use-cache=):
+
+#+BEGIN_SRC elisp
+;; Cache entry structure (conceptual)
+(defstruct org-edna--finder-cache-entry
+  input          ; Input: (func-sym . args)
+  results        ; List of markers
+  last-run-time) ; Timestamp
+#+END_SRC
+
+*** Form Representations
+
+*String form*:
+: "next-sibling todo!(NEXT) scheduled!(\"++1d\")"
+
+*S-expression form* (conceptual):
+#+BEGIN_SRC elisp
+'((next-sibling) (todo! "NEXT") (scheduled! "++1d"))
+#+END_SRC
+
+*Lisp form* (evaluable):
+#+BEGIN_SRC elisp
+(progn
+  (let ((targets (org-edna-finder/next-sibling)))
+    (org-edna-action/todo! (point-marker) "NEXT")
+    (org-edna-action/scheduled! (point-marker) "++1d")))
+#+END_SRC
+
+** Dependency Graph Representation
+
+For building a dependency graph, you'll need to:
+
+1. Collect all headings with org-edna properties
+2. Parse each property to extract finders
+3. Resolve finders to target markers
+4. Map markers back to heading IDs
+5. Build edges between source and target nodes
+
+#+BEGIN_SRC elisp
+;; Example graph structure
+(defstruct org-edna-graph-node
+  id         ; UUID string
+  heading    ; Heading text
+  todo-state ; TODO/DONE/etc
+  blockers   ; List of (finder-expr . target-ids)
+  triggers)  ; List of (finder-expr . target-ids)
+
+(defstruct org-edna-graph-edge
+  source-id    ; UUID of source heading
+  target-id    ; UUID of target heading
+  type         ; 'blocker or 'trigger
+  finder-expr) ; Original finder expression
+#+END_SRC
+
+** Building Dependency Relationships
+
+#+BEGIN_SRC elisp
+(defun my-extract-dependency-edges (heading-id)
+  "Extract edges for heading with HEADING-ID.
+Returns list of (source-id target-id type finder-expr)."
+  (org-with-point-at (org-id-find heading-id 'marker)
+    (let ((blocker (org-entry-get nil "BLOCKER"))
+          (trigger (org-entry-get nil "TRIGGER"))
+          edges)
+
+      ;; Parse BLOCKER property
+      (when blocker
+        (let* ((sexp (org-edna-string-form-to-sexp-form blocker 'blocker))
+               (targets (my-resolve-targets sexp)))
+          (dolist (target-id targets)
+            (push (list heading-id target-id 'blocker blocker) edges))))
+
+      ;; Parse TRIGGER property
+      (when trigger
+        (let* ((sexp (org-edna-string-form-to-sexp-form trigger 'trigger))
+               (targets (my-resolve-targets sexp)))
+          (dolist (target-id targets)
+            (push (list heading-id target-id 'trigger trigger) edges))))
+
+      edges)))
+
+(defun my-resolve-targets (sexp-form)
+  "Resolve sexp-form to list of target heading IDs.
+This is a simplified example - full implementation needs
+to handle all finder types."
+  (let (target-ids)
+    (dolist (elem sexp-form)
+      (when (listp elem)
+        (let ((finder (car elem))
+              (args (cdr elem)))
+          (cond
+           ;; Handle ids() finder
+           ((eq finder 'ids)
+            (setq target-ids (append target-ids args)))
+
+           ;; Handle other finders by calling them
+           (t
+            (let* ((func (intern (format "org-edna-finder/%s" finder)))
+                   (markers (when (fboundp func) (apply func args))))
+              (dolist (marker markers)
+                (org-with-point-at marker
+                  (let ((id (org-id-get-create)))
+                    (push id target-ids))))))))))
+    target-ids))
+#+END_SRC
+
+* Configuration Variables
+
+** org-edna-use-inheritance
+
+Whether to use property inheritance for =BLOCKER= and =TRIGGER=.
+
+#+BEGIN_SRC elisp
+(setq org-edna-use-inheritance nil)  ; Default
+#+END_SRC
+
+** org-edna-prompt-for-archive
+
+Prompt for confirmation before archiving.
+
+#+BEGIN_SRC elisp
+(setq org-edna-prompt-for-archive t)  ; Default
+#+END_SRC
+
+** org-edna-timestamp-format
+
+Default timestamp format for actions.
+
+#+BEGIN_SRC elisp
+(setq org-edna-timestamp-format 'short)  ; Default
+; or
+(setq org-edna-timestamp-format 'long)
+#+END_SRC
+
+** org-edna-finder-use-cache
+
+Enable finder result caching.
+
+#+BEGIN_SRC elisp
+(setq org-edna-finder-use-cache nil)  ; Default: disabled
+#+END_SRC
+
+** org-edna-finder-cache-timeout
+
+Cache timeout in seconds.
+
+#+BEGIN_SRC elisp
+(setq org-edna-finder-cache-timeout 300)  ; Default: 5 minutes
+#+END_SRC
+
+** org-edna-from-todo-states
+
+When to trigger actions: ='todo= or ='not-done=.
+
+#+BEGIN_SRC elisp
+(setq org-edna-from-todo-states 'todo)  ; Default: only from TODO states
+; or
+(setq org-edna-from-todo-states 'not-done)  ; From any non-DONE state
+#+END_SRC
+
+* Integration Points
+
+** For org-edna-graph Package
+
+When building org-edna-graph, integrate at these points:
+
+*** 1. Scanning Phase
+
+Collect all headings with org-edna properties:
+
+#+BEGIN_SRC elisp
+(defun org-edna-graph--scan-files (files)
+  "Scan FILES for org-edna dependencies."
+  (let (nodes)
+    (dolist (file files)
+      (with-current-buffer (find-file-noselect file)
+        (org-with-wide-buffer
+         (goto-char (point-min))
+         (while (re-search-forward org-heading-regexp nil t)
+           (let ((blocker (org-entry-get nil "BLOCKER"))
+                 (trigger (org-entry-get nil "TRIGGER")))
+             (when (or blocker trigger)
+               (push (list :id (org-id-get-create)
+                          :heading (org-get-heading t t t t)
+                          :file file
+                          :point (point)
+                          :todo (org-get-todo-state)
+                          :blocker blocker
+                          :trigger trigger)
+                     nodes)))))))
+    nodes))
+#+END_SRC
+
+*** 2. Parsing Phase
+
+Parse org-edna properties to extract finders:
+
+#+BEGIN_SRC elisp
+(defun org-edna-graph--parse-property (property-string type)
+  "Parse PROPERTY-STRING as TYPE ('blocker or 'trigger).
+Returns list of parsed finder forms."
+  (when property-string
+    (condition-case err
+        (org-edna-string-form-to-sexp-form property-string type)
+      (error
+       (message "Error parsing org-edna property: %s" err)
+       nil))))
+#+END_SRC
+
+*** 3. Resolution Phase
+
+Resolve finders to target IDs:
+
+#+BEGIN_SRC elisp
+(defun org-edna-graph--resolve-finder (finder-sexp source-marker)
+  "Resolve FINDER-SEXP to list of target IDs.
+SOURCE-MARKER is the marker for the source heading."
+  (org-with-point-at source-marker
+    (let* ((finder-name (car finder-sexp))
+           (finder-args (cdr finder-sexp))
+           (func (intern (format "org-edna-finder/%s" finder-name)))
+           target-ids)
+
+      (when (fboundp func)
+        (let ((markers (apply func finder-args)))
+          (dolist (marker markers)
+            (when (marker-position marker)
+              (org-with-point-at marker
+                (let ((id (org-entry-get nil "ID")))
+                  (when id
+                    (push id target-ids))))))))
+
+      target-ids)))
+#+END_SRC
+
+*** 4. Graph Building Phase
+
+Construct graph structure from nodes and edges:
+
+#+BEGIN_SRC elisp
+(defun org-edna-graph--build-graph (nodes)
+  "Build graph from NODES list.
+Returns (nodes . edges) pair."
+  (let (edges)
+    (dolist (node nodes)
+      (let ((source-id (plist-get node :id))
+            (blocker (plist-get node :blocker))
+            (trigger (plist-get node :trigger))
+            (marker (org-id-find source-id 'marker)))
+
+        ;; Process BLOCKER dependencies
+        (when blocker
+          (let ((sexp (org-edna-graph--parse-property blocker 'blocker)))
+            (dolist (finder sexp)
+              (when (listp finder)
+                (let ((targets (org-edna-graph--resolve-finder
+                               finder marker)))
+                  (dolist (target-id targets)
+                    (push (list :from source-id
+                               :to target-id
+                               :type 'blocker
+                               :finder finder)
+                          edges)))))))
+
+        ;; Process TRIGGER dependencies
+        (when trigger
+          (let ((sexp (org-edna-graph--parse-property trigger 'trigger)))
+            (dolist (finder sexp)
+              (when (listp finder)
+                (let ((targets (org-edna-graph--resolve-finder
+                               finder marker)))
+                  (dolist (target-id targets)
+                    (push (list :from source-id
+                               :to target-id
+                               :type 'trigger
+                               :finder finder)
+                          edges)))))))))
+
+    (cons nodes edges)))
+#+END_SRC
+
+*** 5. Filtering for Scale
+
+Handle 1000+ tasks efficiently:
+
+#+BEGIN_SRC elisp
+(defun org-edna-graph--filter-nodes (nodes filter-spec)
+  "Filter NODES based on FILTER-SPEC.
+FILTER-SPEC can specify:
+  - TODO state filter
+  - Tag filter
+  - File filter
+  - Priority filter"
+  (seq-filter
+   (lambda (node)
+     (and
+      ;; Filter by TODO state
+      (or (not (plist-get filter-spec :todo-states))
+          (member (plist-get node :todo)
+                  (plist-get filter-spec :todo-states)))
+
+      ;; Filter by tags (implement as needed)
+      ;; Filter by priority (implement as needed)
+      ))
+   nodes))
+#+END_SRC
+
+** Key Integration Challenges
+
+*** Challenge 1: Circular Dependencies
+
+Org-edna allows circular dependencies. Detection needed:
+
+#+BEGIN_SRC elisp
+(defun org-edna-graph--find-cycles (graph)
+  "Find cycles in GRAPH using depth-first search."
+  ;; Implement cycle detection algorithm
+  )
+#+END_SRC
+
+*** Challenge 2: Relative Finders
+
+Finders like =next-sibling= are dynamic and depend on file structure:
+
+- Take snapshot at scan time
+- Indicate dynamic relationships in visualization
+- Provide refresh mechanism
+
+*** Challenge 3: Match Expressions
+
+=match()= finder uses complex tag queries:
+
+- Need to evaluate =org-map-entries= at scan time
+- Cache results for performance
+- Indicate query-based relationships differently
+
+*** Challenge 4: Conditional Logic
+
+=if/then/else= makes dependencies conditional:
+
+- Parse AST to identify branches
+- Show conditional edges differently
+- Consider showing condition text in UI
+
+* Code Examples
+
+** Example 1: Simple Sequential Tasks
+
+#+BEGIN_SRC org
+,* TODO Task 1
+  :PROPERTIES:
+  :ID:       task-1-id
+  :TRIGGER:  next-sibling todo!(NEXT) scheduled!("++1d")
+  :END:
+
+,* TODO Task 2
+  :PROPERTIES:
+  :BLOCKER:  previous-sibling
+  :TRIGGER:  next-sibling todo!(NEXT) scheduled!("++1d")
+  :END:
+
+,* TODO Task 3
+  :PROPERTIES:
+  :BLOCKER:  previous-sibling
+  :END:
+#+END_SRC
+
+Graph structure:
+: Task 1 --trigger--> Task 2
+: Task 1 --blocks--> Task 2
+: Task 2 --trigger--> Task 3
+: Task 2 --blocks--> Task 3
+
+** Example 2: Project with Dependencies
+
+#+BEGIN_SRC org
+,* TODO Project: Build Website
+  :PROPERTIES:
+  :ID:       project-main
+  :END:
+
+,** TODO Design mockups
+   :PROPERTIES:
+   :ID:       design-id
+   :TRIGGER:  ids("frontend-id" "backend-id") todo!(NEXT)
+   :END:
+
+,** TODO Frontend implementation
+   :PROPERTIES:
+   :ID:       frontend-id
+   :BLOCKER:  ids("design-id")
+   :TRIGGER:  ids("integration-id") todo!(NEXT)
+   :END:
+
+,** TODO Backend implementation
+   :PROPERTIES:
+   :ID:       backend-id
+   :BLOCKER:  ids("design-id")
+   :TRIGGER:  ids("integration-id") todo!(NEXT)
+   :END:
+
+,** TODO Integration testing
+   :PROPERTIES:
+   :ID:       integration-id
+   :BLOCKER:  consider(all) ids("frontend-id" "backend-id") done?
+   :TRIGGER:  ids("deploy-id") todo!(NEXT)
+   :END:
+
+,** TODO Deploy to production
+   :PROPERTIES:
+   :ID:       deploy-id
+   :BLOCKER:  ids("integration-id")
+   :END:
+#+END_SRC
+
+Graph structure:
+: Design --triggers--> Frontend
+: Design --triggers--> Backend
+: Design --blocks--> Frontend
+: Design --blocks--> Backend
+: Frontend --triggers--> Integration
+: Backend --triggers--> Integration
+: Frontend --blocks--> Integration (with consider(all))
+: Backend --blocks--> Integration (with consider(all))
+: Integration --triggers--> Deploy
+: Integration --blocks--> Deploy
+
+** Example 3: Recurring Checklist
+
+#+BEGIN_SRC org
+,* TODO Daily Tasks [0/3]
+  :PROPERTIES:
+  :TRIGGER:  if match("daily&DONE") done? then self todo!(TODO) endif
+  :END:
+
+,** TODO Morning routine               :daily:
+   :PROPERTIES:
+   :TRIGGER:  next-sibling todo!(NEXT) scheduled!("++2h")
+   :END:
+
+,** TODO Check email                   :daily:
+   :PROPERTIES:
+   :BLOCKER:  previous-sibling
+   :TRIGGER:  next-sibling todo!(NEXT) scheduled!("++2h")
+   :END:
+
+,** TODO Evening review                :daily:
+   :PROPERTIES:
+   :BLOCKER:  previous-sibling
+   :TRIGGER:  parent set-property!("LAST_COMPLETE" "<today>")
+   :END:
+#+END_SRC
+
+** Example 4: Counter-based Workflow
+
+#+BEGIN_SRC org
+,* TODO Requires 3 approvals
+  :PROPERTIES:
+  :ID:       approval-task
+  :BLOCKER:  self has-property?("APPROVALS" "3")
+  :END:
+
+,* TODO Manager 1 approval
+  :PROPERTIES:
+  :TRIGGER:  ids("approval-task") set-property!("APPROVALS" inc)
+  :END:
+
+,* TODO Manager 2 approval
+  :PROPERTIES:
+  :TRIGGER:  ids("approval-task") set-property!("APPROVALS" inc)
+  :END:
+
+,* TODO Manager 3 approval
+  :PROPERTIES:
+  :TRIGGER:  ids("approval-task") set-property!("APPROVALS" inc)
+  :END:
+#+END_SRC
+
+** Example 5: Programmatic Extraction
+
+#+BEGIN_SRC elisp
+;; Complete example of extracting and processing org-edna dependencies
+
+(require 'org-edna)
+
+(defun my-extract-all-dependencies (files)
+  "Extract all org-edna dependencies from FILES.
+Returns list of (source-id . target-ids) pairs."
+  (let (dependencies)
+
+    (dolist (file files)
+      (with-current-buffer (find-file-noselect file)
+        (org-with-wide-buffer
+
+         ;; Scan all headings
+         (org-map-entries
+          (lambda ()
+            (let* ((source-id (org-id-get-create))
+                   (blocker (org-entry-get nil "BLOCKER"))
+                   (trigger (org-entry-get nil "TRIGGER"))
+                   (source-marker (point-marker))
+                   targets)
+
+              ;; Process BLOCKER
+              (when blocker
+                (let ((sexp (org-edna-string-form-to-sexp-form
+                            blocker 'blocker)))
+                  (setq targets
+                        (append targets
+                                (my-resolve-all-targets
+                                 sexp source-marker)))))
+
+              ;; Process TRIGGER
+              (when trigger
+                (let ((sexp (org-edna-string-form-to-sexp-form
+                            trigger 'trigger)))
+                  (setq targets
+                        (append targets
+                                (my-resolve-all-targets
+                                 sexp source-marker)))))
+
+              ;; Store dependencies
+              (when targets
+                (push (cons source-id targets) dependencies))))
+
+          nil 'file))))
+
+    dependencies))
+
+(defun my-resolve-all-targets (sexp-form source-marker)
+  "Resolve all targets in SEXP-FORM from SOURCE-MARKER."
+  (let (target-ids)
+
+    (org-with-point-at source-marker
+      (dolist (elem sexp-form)
+        (when (listp elem)
+          (let ((finder (car elem))
+                (args (cdr elem)))
+
+            ;; Handle different finder types
+            (cond
+             ;; ids() - direct UUID references
+             ((eq finder 'ids)
+              (dolist (uuid args)
+                (push (if (string-prefix-p "id:" uuid)
+                         (substring uuid 3)
+                       uuid)
+                      target-ids)))
+
+             ;; Other finders - call them
+             (t
+              (let ((func (intern (format "org-edna-finder/%s" finder))))
+                (when (fboundp func)
+                  (condition-case err
+                      (let ((markers (apply func args)))
+                        (dolist (marker markers)
+                          (when (marker-position marker)
+                            (org-with-point-at marker
+                              (let ((id (org-id-get-create)))
+                                (push id target-ids))))))
+                    (error
+                     (message "Error calling finder %s: %s"
+                             finder err)))))))))))
+
+    (delete-dups target-ids)))
+
+;; Usage example
+(let* ((files (org-agenda-files))
+       (deps (my-extract-all-dependencies files)))
+
+  ;; Print dependency graph
+  (dolist (dep deps)
+    (let ((source (car dep))
+          (targets (cdr dep)))
+      (message "%s depends on: %s" source (mapconcat #'identity targets ", ")))))
+#+END_SRC
+
+* Gotchas and Edge Cases
+
+** 1. Cache Invalidation
+
+*Problem*: Cached finder results can become stale, causing incorrect blocking behavior.
+
+*Symptoms*:
+- Tasks that should be blocked aren't blocked
+- Tasks blocked when they shouldn't be
+
+*Solution*:
+#+BEGIN_SRC elisp
+;; Disable cache for reliability
+(setq org-edna-finder-use-cache nil)
+
+;; Or manually reset when needed
+M-x org-edna-reset-cache
+#+END_SRC
+
+** 2. File-based Finders and Buffer State
+
+*Problem*: Finders that search files may not see unsaved changes.
+
+*Solution*:
+- Save buffers before marking tasks DONE
+- Use =org-save-all-org-buffers= in workflows
+
+** 3. Circular Dependencies
+
+*Problem*: Org-edna allows creating circular dependencies.
+
+#+BEGIN_SRC org
+,* TODO Task A
+  :PROPERTIES:
+  :ID:       task-a
+  :BLOCKER:  ids("task-b")
+  :END:
+
+,* TODO Task B
+  :PROPERTIES:
+  :ID:       task-b
+  :BLOCKER:  ids("task-a")
+  :END:
+#+END_SRC
+
+*Result*: Both tasks permanently blocked.
+
+*Detection*: org-edna-graph should implement cycle detection.
+
+** 4. Property Inheritance
+
+*Problem*: If =org-edna-use-inheritance= is enabled, child headings inherit parent's =BLOCKER=/=TRIGGER=.
+
+*Solution*: Be explicit about inheritance needs.
+
+#+BEGIN_SRC elisp
+;; Usually better to keep it disabled
+(setq org-edna-use-inheritance nil)
+#+END_SRC
+
+** 5. Dynamic vs. Static References
+
+*Problem*: Some finders are dynamic (=next-sibling=), others static (=ids=).
+
+- *Dynamic*: Results change when file structure changes
+- *Static*: Always reference same targets
+
+*Implication for Visualization*:
+- Snapshot dynamic references at scan time
+- Consider refresh mechanism for accuracy
+- Visually distinguish dynamic relationships
+
+** 6. Conditional Complexity
+
+*Problem*: Complex conditionals with =if/then/else= make dependencies non-obvious.
+
+#+BEGIN_SRC org
+:TRIGGER:  if match("done") done? then next-sibling todo!(NEXT)
+           else self todo!(WAITING) endif
+#+END_SRC
+
+*Solution for Visualization*:
+- Parse conditional AST
+- Show both branches
+- Indicate conditional nature in graph
+
+** 7. Match Expression Scope
+
+*Problem*: =match()= searches entire buffer/agenda scope, not just related headings.
+
+*Performance Impact*:
+- Can be slow with many headings
+- Results may include unexpected targets
+
+*Solution*:
+- Be specific with match strings
+- Combine with tag filters
+- Cache results appropriately
+
+** 8. Missing IDs
+
+*Problem*: =ids()= finder fails silently if UUID doesn't exist.
+
+#+BEGIN_SRC org
+:BLOCKER:  ids("nonexistent-id")
+#+END_SRC
+
+*Result*: No targets found, no blocking occurs.
+
+*Detection*:
+#+BEGIN_SRC elisp
+;; Check if ID exists
+(defun my-validate-id (uuid)
+  "Check if UUID exists."
+  (org-id-find uuid))
+#+END_SRC
+
+** 9. Relative Finder Edge Cases
+
+*Problem*: Relative finders return =nil= when no target exists.
+
+#+BEGIN_SRC org
+,* TODO First task
+  :PROPERTIES:
+  :BLOCKER:  previous-sibling  ; No previous sibling!
+  :END:
+#+END_SRC
+
+*Result*: No blocker, task can complete immediately.
+
+*Validation*: Warn users about references to non-existent siblings.
+
+** 10. Time Zone in Timestamps
+
+*Problem*: Absolute timestamps may not handle time zones as expected.
+
+#+BEGIN_SRC org
+:TRIGGER:  next-sibling scheduled!("Mon 09:00")
+#+END_SRC
+
+*Result*: Uses local time zone.
+
+*Solution*: Document behavior, use relative timestamps when possible.
+
+** 11. Property Value Limits
+
+*Problem*: Very long property values may be truncated or cause issues.
+
+*Recommendation*:
+- Keep =BLOCKER=/=TRIGGER= properties concise
+- Split complex logic across multiple headings
+- Use helper tags for grouping instead of complex match strings
+
+** 12. Performance with Large Files
+
+*Problem*: Finders like =match()= scan entire files.
+
+*Impact*:
+- Noticeable delay with 1000+ headings
+- Multiple triggers can compound delay
+
+*Optimization*:
+#+BEGIN_SRC elisp
+;; Enable caching for large files
+(setq org-edna-finder-use-cache t)
+(setq org-edna-finder-cache-timeout 600) ; 10 minutes
+
+;; Or optimize match strings
+;; Instead of: match("project")
+;; Use: match("project&LEVEL=2")
+#+END_SRC
+
+** 13. org-id-track-globally Requirement
+
+*Problem*: =ids()= finder requires =org-id= to be configured.
+
+*Setup*:
+#+BEGIN_SRC elisp
+(require 'org-id)
+(setq org-id-track-globally t)
+(setq org-id-locations-file "~/.emacs.d/.org-id-locations")
+#+END_SRC
+
+*Issue*: If =org-id-locations-file= is out of date, IDs won't resolve.
+
+*Solution*:
+#+BEGIN_SRC elisp
+;; Rebuild ID cache
+M-x org-id-update-id-locations
+#+END_SRC
+
+** 14. Escaped Quotes in Strings
+
+*Problem*: String arguments need proper escaping.
+
+#+BEGIN_SRC org
+; Wrong:
+:BLOCKER:  match("tag"subtag")
+
+; Correct:
+:BLOCKER:  match("tag\"subtag\"")
+#+END_SRC
+
+** 15. Action Order Matters
+
+*Problem*: Actions execute left-to-right; order affects results.
+
+#+BEGIN_SRC org
+; This works:
+:TRIGGER:  next-sibling todo!(NEXT) scheduled!("++1d")
+
+; This might fail if NEXT requires a schedule:
+:TRIGGER:  next-sibling scheduled!("++1d") todo!(NEXT)
+#+END_SRC
+
+* Summary
+
+** Key Takeaways for org-edna-graph
+
+1. *Data Storage*: Dependencies stored as plain text in =BLOCKER= and =TRIGGER= properties
+
+2. *Parsing*: Use =org-edna-string-form-to-sexp-form= to parse properties
+
+3. *Resolution*: Call finder functions directly to resolve targets, or parse and analyze statically
+
+4. *Data Structure*: Markers are fundamental; convert to IDs for stable references
+
+5. *Graph Building*:
+   - Scan org files for =BLOCKER=/=TRIGGER= properties
+   - Parse properties to extract finders
+   - Resolve finders to target IDs
+   - Build edges: (source-id, target-id, type, expression)
+
+6. *Scale Considerations*:
+   - Cache parsed results
+   - Provide filtering mechanisms
+   - Consider incremental updates
+   - Handle dynamic finders appropriately
+
+7. *Edge Cases*:
+   - Circular dependencies
+   - Missing IDs
+   - Dynamic vs. static references
+   - Conditional logic
+   - Performance with match expressions
+
+** Recommended Architecture for org-edna-graph
+
+#+BEGIN_SRC text
+┌─────────────────┐
+│  Org Files      │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Scanner        │ ← Collect headings with BLOCKER/TRIGGER
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Parser         │ ← Parse org-edna properties
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Resolver       │ ← Resolve finders to target IDs
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Graph Builder  │ ← Create nodes and edges
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Visualizer     │ ← Render graph (PlantUML/GraphViz)
+└─────────────────┘
+#+END_SRC
+
+** Next Steps
+
+1. Implement scanner to collect org-edna headings
+2. Create parser using org-edna's parsing functions
+3. Build resolver supporting all finder types
+4. Design graph data structure
+5. Implement visualization generator
+6. Add filtering for large graphs (1000+ nodes)
+7. Handle edge cases and circular dependencies
+8. Create user-friendly interface
+
+* References
+
+- Official Documentation: https://www.nongnu.org/org-edna-el/
+- GNU ELPA: https://elpa.gnu.org/packages/org-edna.html
+- GitHub Mirror: https://github.com/emacsmirror/org-edna
+- Karl Voit's Blog: https://karl-voit.at/ (practical usage examples)
+
+* Appendix: Complete API Index
+
+** Finders
+- =org-edna-finder/self=
+- =org-edna-finder/ids=
+- =org-edna-finder/next-sibling=
+- =org-edna-finder/previous-sibling=
+- =org-edna-finder/siblings=
+- =org-edna-finder/parent=
+- =org-edna-finder/children=
+- =org-edna-finder/descendants=
+- =org-edna-finder/ancestors=
+- =org-edna-finder/match=
+- =org-edna-finder/relatives= (alias: =chain-find=)
+- =org-edna-finder/olp=
+- =org-edna-finder/org-file=
+- =org-edna-finder/file=
+
+** Conditions
+- =org-edna-condition/done?=
+- =org-edna-condition/todo-state?=
+- =org-edna-condition/headings?=
+- =org-edna-condition/has-property?=
+- =org-edna-condition/has-tags?=
+- =org-edna-condition/re-search?=
+- =org-edna-condition/matches?=
+- =org-edna-condition/variable-set?=
+
+** Actions
+- =org-edna-action/todo!=
+- =org-edna-action/scheduled!=
+- =org-edna-action/deadline!=
+- =org-edna-action/tag!=
+- =org-edna-action/set-property!=
+- =org-edna-action/delete-property!=
+- =org-edna-action/set-priority!=
+- =org-edna-action/set-effort!=
+- =org-edna-action/clock-in!=
+- =org-edna-action/clock-out!=
+- =org-edna-action/archive!=
+- =org-edna-action/chain!=
+
+** Configuration Variables
+- =org-edna-use-inheritance=
+- =org-edna-prompt-for-archive=
+- =org-edna-timestamp-format=
+- =org-edna-finder-use-cache=
+- =org-edna-finder-cache-timeout=
+- =org-edna-from-todo-states=
+
+** Interactive Commands
+- =org-edna-edit=
+- =org-edna-reset-cache=
+
+** Core Functions
+- =org-edna-load=
+- =org-edna-unload=
+- =org-edna-parse-string-form=
+- =org-edna-string-form-to-sexp-form=
+- =org-edna-break-modifier=
+- =org-edna-process-form=
+- =org-edna-eval-sexp-form=
+- =org-edna-trigger-function= (hook)
+- =org-edna-blocker-function= (hook)
