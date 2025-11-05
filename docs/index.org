@@ -19,3 +19,6 @@ Guidelines for the project, focusing on the role of README.org for introductions
 
 ** [[file:project-management-guidelines.org][Project management guidelines]]
 Documentation strategy and workflow guidance.
+
+** [[file:parallel-claude-sessions-guide.org][Parallel Claude Code Sessions Guide]]
+How to run multiple Claude Code sessions simultaneously on the same repository for truly parallel development workflows.

@@ -1,0 +1,298 @@
+* Running Multiple Claude Code Sessions in Parallel
+
+This guide explains how to run multiple Claude Code sessions simultaneously on the same repository, enabling truly parallel development workflows.
+
+** What Are Parallel Claude Code Sessions?
+
+Parallel sessions means running multiple independent Claude Code CLI instances at the same time, each in their own terminal window or tab. Each session maintains its own conversation context and can work on different aspects of your project simultaneously.
+
+** Multiple Sessions vs. Multiple Agents
+
+It's important to understand the difference between these two approaches:
+
+*** Multiple Agents (Single Session)
+- One terminal window running =claude=
+- Use the =Task= tool to spawn sub-agents within the session
+- Agents run within the same conversation context
+- Sequential or limited concurrent execution
+- Agents share the same conversation history
+- Good for: Related subtasks that need coordination, tasks that benefit from shared context
+
+*** Multiple Sessions (This Guide)
+- Multiple terminal windows, each running =claude=
+- Each session is completely independent
+- True parallel execution across different terminals
+- Each session has its own conversation history
+- Good for: Large parallel workstreams, independent features, maximum throughput
+
+** When to Use Multiple Parallel Sessions
+
+Consider using multiple sessions when:
+
+1. **Large Projects**: You need to work on multiple independent features simultaneously
+2. **Different Domains**: Frontend, backend, tests, and documentation can proceed in parallel
+3. **Maximum Speed**: Multiple sessions can work simultaneously without waiting
+4. **Isolation**: You want separate conversation contexts for different concerns
+5. **Complex Workflows**: Different sessions can focus on different architectural layers
+
+** Setting Up Multiple Parallel Sessions
+
+*** Prerequisites
+- Claude Code CLI installed and configured
+- A git repository to work on
+- Multiple terminal windows/tabs or a terminal multiplexer (tmux, screen)
+
+*** Step 1: Plan Your Parallel Workstreams
+
+Before launching sessions, identify independent tasks:
+- Session 1: Implement authentication feature
+- Session 2: Write API documentation
+- Session 3: Create unit tests
+- Session 4: Refactor database layer
+
+*** Step 2: Create Git Branches for Each Session
+
+Each session should work on its own branch to avoid conflicts:
+
+#+begin_src bash
+# In your repository
+git checkout -b claude/feature-authentication-SESSION1
+git push -u origin claude/feature-authentication-SESSION1
+
+git checkout main
+git checkout -b claude/api-documentation-SESSION2
+git push -u origin claude/api-documentation-SESSION2
+
+git checkout main
+git checkout -b claude/unit-tests-SESSION3
+git push -u origin claude/unit-tests-SESSION3
+#+end_src
+
+*Important Branch Naming Convention:* Claude Code requires branches to start with =claude/= for proper authentication when pushing.
+
+*** Step 3: Launch Claude Code Sessions
+
+Open multiple terminal windows/tabs and launch a Claude Code session in each:
+
+#+begin_src bash
+# Terminal 1
+cd /path/to/your/repo
+git checkout claude/feature-authentication-SESSION1
+claude
+
+# Terminal 2
+cd /path/to/your/repo
+git checkout claude/api-documentation-SESSION2
+claude
+
+# Terminal 3
+cd /path/to/your/repo
+git checkout claude/unit-tests-SESSION3
+claude
+#+end_src
+
+*** Step 4: Direct Each Session's Work
+
+In each Claude Code session, provide clear, focused instructions:
+
+*Terminal 1:*
+#+begin_example
+Implement user authentication using JWT tokens. Include login, logout,
+and token refresh endpoints. Work on the claude/feature-authentication-SESSION1
+branch.
+#+end_example
+
+*Terminal 2:*
+#+begin_example
+Generate comprehensive API documentation for all existing endpoints.
+Create OpenAPI/Swagger specs. Work on the claude/api-documentation-SESSION2
+branch.
+#+end_example
+
+*Terminal 3:*
+#+begin_example
+Write unit tests for the user service module. Aim for 90% coverage.
+Work on the claude/unit-tests-SESSION3 branch.
+#+end_example
+
+** Best Practices for Parallel Sessions
+
+*** 1. Clear Task Boundaries
+Ensure tasks are truly independent to avoid merge conflicts:
+- ✅ Good: Session 1 works on =auth.js=, Session 2 works on =api-docs/=
+- ❌ Bad: Both sessions modifying the same =config.js= file
+
+*** 2. Branch Naming Strategy
+Use descriptive, session-specific branch names:
+- Pattern: =claude/<feature-name>-<identifier>=
+- Example: =claude/user-auth-session1=, =claude/api-docs-session2=
+- Required: Must start with =claude/= for push authentication
+
+*** 3. Regular Synchronization
+Periodically merge changes from main into your feature branches:
+
+#+begin_src bash
+# In each session's branch
+git fetch origin
+git merge origin/main
+#+end_src
+
+*** 4. Coordinate Shared Dependencies
+If sessions need to share code:
+- Have one session complete and merge foundational work first
+- Other sessions can then pull those changes
+- Use a "staging" session to integrate work from multiple sessions
+
+*** 5. Monitor All Sessions
+Keep all terminal windows visible (use a tiling window manager or terminal multiplexer):
+- Monitor progress across all sessions
+- Catch errors early
+- Coordinate when needed
+
+*** 6. Session Documentation
+Keep notes on what each session is working on:
+- Create a simple tracking file
+- Update when sessions complete tasks
+- Helps resume work if sessions are interrupted
+
+** Advanced Workflows
+
+*** Workflow 1: Pipeline Approach
+
+Sessions work in sequence with handoffs:
+
+1. Session 1: Design database schema → commit to =claude/db-schema=
+2. Session 2: Pull schema changes, implement models → commit to =claude/models=
+3. Session 3: Pull model changes, create API endpoints → commit to =claude/api=
+4. Session 4: Pull API changes, write tests → commit to =claude/tests=
+
+*** Workflow 2: Layer-Based Parallelism
+
+Each session owns a layer:
+
+- Session 1: Database layer (=src/database/*=)
+- Session 2: Business logic (=src/services/*=)
+- Session 3: API layer (=src/api/*=)
+- Session 4: Frontend (=src/frontend/*=)
+
+All sessions work simultaneously on their layers.
+
+*** Workflow 3: Feature Teams
+
+Multiple sessions work on a single large feature:
+
+- Session 1: Core feature implementation
+- Session 2: Tests for the feature
+- Session 3: Documentation for the feature
+- Session 4: Integration with existing code
+
+** Merging Parallel Work
+
+Once sessions complete their work:
+
+*** Option 1: Sequential Merging
+#+begin_src bash
+# Merge one branch at a time
+git checkout main
+git merge claude/feature-authentication-SESSION1
+git push origin main
+
+git merge claude/api-documentation-SESSION2
+git push origin main
+#+end_src
+
+*** Option 2: Pull Requests
+Create a PR for each branch and review before merging:
+#+begin_src bash
+# In each session's branch
+gh pr create --title "Add authentication feature" --base main
+#+end_src
+
+*** Option 3: Integration Branch
+Merge all feature branches into an integration branch first:
+#+begin_src bash
+git checkout -b integration/parallel-work
+git merge claude/feature-authentication-SESSION1
+git merge claude/api-documentation-SESSION2
+git merge claude/unit-tests-SESSION3
+# Test everything together
+git checkout main
+git merge integration/parallel-work
+#+end_src
+
+** Handling Conflicts
+
+When merge conflicts occur:
+
+1. **Identify the conflict source**: Determine which sessions touched the same code
+2. **Coordinate resolution**: Have one session handle the merge
+3. **Test after merge**: Ensure integrated code works correctly
+4. **Prevention**: Better task isolation upfront reduces conflicts
+
+** Terminal Multiplexer Setup (Advanced)
+
+For managing many sessions efficiently, use tmux:
+
+#+begin_src bash
+# Create a tmux session with multiple windows
+tmux new-session -s claude-parallel
+
+# Split into panes (Ctrl+b then %)
+# Or create new windows (Ctrl+b then c)
+
+# In each pane/window
+cd /path/to/repo
+git checkout <respective-branch>
+claude
+#+end_src
+
+** Example: Real-World Scenario
+
+Let's say you're building a blog platform. Here's how you might use parallel sessions:
+
+*** Session 1: Backend API
+*Branch:* =claude/backend-api-v1=
+*Task:* Implement REST API endpoints for posts, comments, and users
+
+*** Session 2: Frontend Components
+*Branch:* =claude/frontend-components-v1=
+*Task:* Create React components for blog post display and editing
+
+*** Session 3: Database & Migrations
+*Branch:* =claude/database-schema-v1=
+*Task:* Design and implement database schema with migrations
+
+*** Session 4: Testing & Documentation
+*Branch:* =claude/tests-docs-v1=
+*Task:* Write integration tests and API documentation
+
+All four sessions can work simultaneously. Sessions 1 & 3 coordinate on database schemas, while Sessions 2 & 4 can work independently.
+
+** Troubleshooting
+
+*** Issue: Sessions interfere with each other
+*Solution:* Ensure each session is on a different git branch
+
+*** Issue: Can't push branches
+*Solution:* Branch names must start with =claude/= for authentication
+
+*** Issue: Too many merge conflicts
+*Solution:* Improve task isolation, reduce file overlap between sessions
+
+*** Issue: Lost track of what each session is doing
+*Solution:* Create a tracking document, use descriptive branch names, add session identifiers to commits
+
+** Tips for Success
+
+1. **Start Small**: Begin with 2 sessions before scaling to more
+2. **Clear Communication**: Give each session clear, unambiguous instructions
+3. **Regular Commits**: Have sessions commit frequently to track progress
+4. **Monitor Resources**: Multiple sessions consume more CPU/memory
+5. **Test Integration**: Test combined work before considering it complete
+6. **Learn from Experience**: Track what works and refine your approach
+
+** Conclusion
+
+Running multiple Claude Code sessions in parallel is a powerful technique for accelerating development on large projects. By maintaining proper branch isolation, clear task boundaries, and good coordination practices, you can achieve truly parallel development workflows that maximize productivity.
+
+The key is to start with well-defined, independent tasks and gradually build up your parallel workflow practices as you become more comfortable with the approach.
