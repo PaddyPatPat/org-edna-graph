@@ -6,16 +6,23 @@
 
 This document provides architectural recommendations for org-edna-graph, drawing inspiration from org-roam-ui's successful implementation. The goal is to leverage proven patterns while adapting them to the specific needs of visualizing org-edna task dependencies.
 
-For complete details on org-roam-ui's architecture, see [[file:org-roam-ui-research.md][org-roam-ui research]].
+*Related research documents:*
+- [[file:org-roam-ui-research.md][org-roam-ui Research]] - Frontend architecture and visualization patterns
+- [[file:org-roam-database-research.org][org-roam Database Research]] - SQLite implementation and performance analysis
 
 * Executive Summary
 
-Recommended approach: *Dual-component architecture with real-time synchronization*
+Recommended approach: *Dual-component architecture with SQLite database and real-time synchronization*
 
-- **Emacs Backend**: Elisp package that queries org-edna data and serves it via WebSocket/HTTP
+- **SQLite Database**: Essential for handling thousands of tasks efficiently (100-1000× faster than parsing)
+- **Emacs Backend**: Elisp package that maintains database and serves data via WebSocket/HTTP
 - **Web Frontend**: Modern JavaScript visualization (React + graph library)
 - **Communication**: Real-time bidirectional protocol
 - **Distribution**: Pre-built frontend bundled with Elisp package for easy MELPA installation
+
+** Critical Requirement: SQLite Database
+
+Given the requirement to handle *thousands of tasks*, a SQLite database is **ESSENTIAL, not optional**. Direct file parsing would be 100-1000× slower for graph queries. See [[file:org-roam-database-research.org][database research]] for detailed analysis.
 
 * Core Architectural Recommendations
 
@@ -36,11 +43,13 @@ Recommended approach: *Dual-component architecture with real-time synchronizatio
 │                         EMACS                                │
 │  ┌────────────────────────────────────────────────────┐     │
 │  │         org-edna-graph.el (Backend)                │     │
-│  │  • Parse org-edna dependencies                     │     │
-│  │  • Extract task metadata                           │     │
+│  │  • SQLite Database :36900                          │     │
+│  │    - Hash-based change detection                   │     │
+│  │    - Incremental sync of org files                 │     │
+│  │    - Fast graph queries (<100ms)                   │     │
 │  │  • HTTP Server :36901                              │     │
 │  │  • WebSocket Server :36903                         │     │
-│  │  • Track org-agenda file changes                   │     │
+│  │  • File watching hooks                             │     │
 │  └────────────────────────────────────────────────────┘     │
 │                          ↕                                   │
 │                    WebSocket + HTTP                          │
@@ -60,7 +69,197 @@ Recommended approach: *Dual-component architecture with real-time synchronizatio
 └─────────────────────────────────────────────────────────────┘
 #+end_src
 
-** 2. Communication Protocol Design
+** 2. SQLite Database Architecture (CRITICAL)
+
+*** Why SQLite is Essential
+
+*Performance comparison for thousands of tasks:*
+
+| Operation | Direct Parsing | SQLite | Speedup |
+|-----------+---------------+--------+---------|
+| Get blockers for task | O(N) parse all files | O(1) index lookup | 100-1000× |
+| Get dependency chain | O(N×M) recursive parse | O(log N) recursive query | 100-1000× |
+| Find tasks by tag | O(N) parse all files | O(M) indexed scan | 10-100× |
+| Full graph query | O(N) parse all files | O(N) table scan | 10-100× |
+| Update one task | O(1) parse one file | O(1) update rows | Similar |
+
+N = number of files, M = matching subset
+
+*Real-world impact with 1000+ tasks:*
+- Direct parsing: 5-30 seconds per graph load
+- SQLite: 100-500ms per graph load
+- Result: 50-300× faster, enables real-time interactivity
+
+*** How org-roam Uses SQLite
+
+org-roam does NOT use SQLite instead of parsing files. Rather:
+
+1. *Parse org files* → Extract nodes, links, tags (using org-element)
+2. *Sync to SQLite* → Store structured data in database (via org-roam-db-sync)
+3. *Query from SQLite* → Fast graph queries for UI (via SQL)
+4. *Incremental updates* → Only re-parse changed files (hash-based detection)
+
+This is exactly what org-edna-graph should do!
+
+*** Database Schema for org-edna-graph
+
+Based on org-roam's proven design, adapted for Edna:
+
+#+begin_src sql
+-- Files table: Track org files and detect changes
+CREATE TABLE files (
+  file TEXT UNIQUE PRIMARY KEY,
+  hash TEXT NOT NULL,           -- SHA-1 hash for change detection
+  mtime TEXT NOT NULL            -- Modification timestamp
+);
+
+-- Tasks table: Store task metadata
+CREATE TABLE tasks (
+  id TEXT NOT NULL PRIMARY KEY,  -- org-id
+  file TEXT NOT NULL,
+  pos INTEGER NOT NULL,          -- Character position in file
+  level INTEGER NOT NULL,        -- Heading level
+  todo TEXT,                     -- TODO state
+  priority TEXT,                 -- Priority [#A], [#B], [#C]
+  title TEXT NOT NULL,           -- Task headline
+  scheduled TEXT,                -- ISO8601 timestamp
+  deadline TEXT,                 -- ISO8601 timestamp
+  effort TEXT,                   -- Effort estimate
+  blocker_raw TEXT,              -- Raw BLOCKER property
+  trigger_raw TEXT,              -- Raw TRIGGER property
+  properties TEXT,               -- JSON of all properties
+  FOREIGN KEY (file) REFERENCES files (file) ON DELETE CASCADE
+);
+
+-- Tags table: Many-to-many relationship
+CREATE TABLE tags (
+  task_id TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE
+);
+CREATE INDEX tags_task_idx ON tags (task_id);
+
+-- Blockers table: Blocking relationships
+CREATE TABLE blockers (
+  blocker_id TEXT NOT NULL,      -- Task that blocks
+  blocked_id TEXT NOT NULL,      -- Task that is blocked
+  condition TEXT,                -- Edna condition
+  FOREIGN KEY (blocker_id) REFERENCES tasks (id) ON DELETE CASCADE,
+  FOREIGN KEY (blocked_id) REFERENCES tasks (id) ON DELETE CASCADE
+);
+CREATE INDEX blockers_blocker_idx ON blockers (blocker_id);
+CREATE INDEX blockers_blocked_idx ON blockers (blocked_id);
+
+-- Triggers table: Trigger relationships
+CREATE TABLE triggers (
+  source_id TEXT NOT NULL,       -- Task that triggers
+  target_id TEXT NOT NULL,       -- Task that is triggered
+  action TEXT,                   -- Edna action
+  FOREIGN KEY (source_id) REFERENCES tasks (id) ON DELETE CASCADE,
+  FOREIGN KEY (target_id) REFERENCES tasks (id) ON DELETE CASCADE
+);
+CREATE INDEX triggers_source_idx ON triggers (source_id);
+CREATE INDEX triggers_target_idx ON triggers (target_id);
+#+end_src
+
+*** Database Synchronization Process
+
+Following org-roam's proven algorithm:
+
+#+begin_src elisp
+(defun org-edna-graph-db-sync (&optional force)
+  "Synchronize database with org files.
+If FORCE, rebuild database from scratch."
+  (interactive "P")
+  (when force
+    (delete-file org-edna-graph-db-location))
+  (org-edna-graph-db-init)
+  (let* ((gc-cons-threshold most-positive-fixnum)  ; Reduce GC pauses
+         (org-files (org-agenda-files))            ; Or custom file list
+         (current-files (org-edna-graph--get-file-hashes))
+         (modified-files nil))
+    ;; Detect changes via hash comparison
+    (dolist (file org-files)
+      (let ((new-hash (org-edna-graph--file-hash file)))
+        (unless (string= (gethash file current-files) new-hash)
+          (push file modified-files))
+        (remhash file current-files)))
+    ;; Single transaction for all changes
+    (emacsql-with-transaction (org-edna-graph-db)
+      ;; Remove deleted files (CASCADE handles dependencies)
+      (dolist (file (hash-table-keys current-files))
+        (org-edna-graph-db-clear-file file))
+      ;; Update modified files
+      (dolist (file modified-files)
+        (condition-case err
+            (org-edna-graph-db-update-file file)
+          (error
+           (lwarn 'org-edna-graph :error
+                  "Failed to process %s: %s" file err)))))))
+#+end_src
+
+*** Key Performance Optimizations
+
+1. *Hash-based change detection*: O(1) comparison vs O(n) parsing
+2. *Transaction batching*: All changes in single transaction (10-100× faster)
+3. *Strategic indexing*: Foreign key indices for fast JOIN operations
+4. *Incremental updates*: Only parse changed files (typically <5%)
+5. *GC tuning*: Reduce garbage collection pauses during sync
+6. *Lazy loading*: Don't load entire graph into memory
+
+*** Critical SQL Queries for Graph Visualization
+
+#+begin_src sql
+-- Get all tasks for visualization
+SELECT id, title, todo, priority, scheduled, deadline, tags
+FROM tasks
+LEFT JOIN tags ON id = task_id
+GROUP BY id;
+
+-- Get all blocking relationships
+SELECT blocker_id, blocked_id, condition
+FROM blockers;
+
+-- Get all trigger relationships
+SELECT source_id, target_id, action
+FROM triggers;
+
+-- Get dependency chain (recursive)
+WITH RECURSIVE chain AS (
+  SELECT blocker_id, blocked_id, 1 as depth
+  FROM blockers
+  WHERE blocked_id = ?
+  UNION ALL
+  SELECT b.blocker_id, b.blocked_id, c.depth + 1
+  FROM blockers b
+  JOIN chain c ON b.blocked_id = c.blocker_id
+  WHERE c.depth < 100
+)
+SELECT * FROM chain;
+#+end_src
+
+*** Autosync Mode
+
+Like org-roam, implement automatic synchronization:
+
+#+begin_src elisp
+(define-minor-mode org-edna-graph-autosync-mode
+  "Keep org-edna-graph database synchronized automatically."
+  :global t
+  :group 'org-edna-graph
+  (if org-edna-graph-autosync-mode
+      (progn
+        ;; Setup hooks
+        (add-hook 'after-save-hook #'org-edna-graph--update-on-save-h)
+        (advice-add 'org-agenda-redo :after #'org-edna-graph--maybe-sync)
+        ;; Initial sync
+        (org-edna-graph-db-sync))
+    ;; Cleanup
+    (remove-hook 'after-save-hook #'org-edna-graph--update-on-save-h)
+    (advice-remove 'org-agenda-redo #'org-edna-graph--maybe-sync)))
+#+end_src
+
+** 3. Communication Protocol Design
 
 *** WebSocket Message Types
 
@@ -176,12 +375,19 @@ Recommended approach: *Dual-component architecture with real-time synchronizatio
 *** Backend (Emacs Lisp)
 
 *Required Libraries*:
+- ~emacsql~ - SQLite database interface (CRITICAL)
+- ~emacsql-sqlite~ - SQLite backend for emacsql
 - ~simple-httpd~ - HTTP server for serving web app and endpoints
 - ~websocket~ - WebSocket server for real-time communication
 - ~org-edna~ - Parse and understand dependencies
 - ~org-element~ - Parse org-mode structure
 - ~json~ - Fast JSON encoding (requires Emacs >= 27.1)
 - ~f~ / ~dash~ - File and list utilities
+
+*Database Configuration*:
+- Database location: =~/.emacs.d/org-edna-graph.db=
+- Requires Emacs >= 27.1 for fast JSON encoding
+- SQLite version 3.8.0+ recommended
 
 *Suggested Ports*:
 - HTTP: 36901 (different from org-roam-ui to avoid conflicts)
@@ -456,36 +662,43 @@ Similar to org-roam-ui's "Tweaks" panel:
 
 ** 9. Development Workflow
 
-*** Phase 1: Core Backend (Weeks 1-2)
+*** Phase 1: Database Foundation (Weeks 1-2)
+1. Design and implement SQLite schema
+2. Implement hash-based file change detection
+3. Create org-edna-graph-db-sync function
+4. Parse org-edna BLOCKER/TRIGGER properties
+5. Extract task metadata and relationships
+6. Test incremental updates and transactions
+
+*** Phase 2: Backend Services (Weeks 3-4)
 1. Set up HTTP server with simple-httpd
 2. Implement WebSocket server
-3. Parse org-edna dependencies
-4. Extract task metadata
-5. Serialize to JSON
-6. Test with curl/wscat
+3. Create database query functions for graph data
+4. Implement autosync mode with hooks
+5. Test WebSocket message flow with wscat
 
-*** Phase 2: Basic Frontend (Weeks 3-4)
+*** Phase 3: Basic Frontend (Weeks 5-6)
 1. Set up Next.js/React project
-2. WebSocket connection
-3. Basic DAG visualization
+2. WebSocket connection to backend
+3. Basic DAG visualization with dagre
 4. Task detail panel
-5. Simple styling
+5. Simple styling and theme sync
 
-*** Phase 3: Interactivity (Weeks 5-6)
+*** Phase 4: Interactivity (Weeks 7-8)
 1. Click to open in Emacs
 2. Filtering controls
 3. Theme synchronization
 4. Follow mode
 5. Keyboard shortcuts
 
-*** Phase 4: Advanced Features (Weeks 7-8)
+*** Phase 5: Advanced Features (Weeks 9-10)
 1. Multiple layout algorithms
 2. Timeline view
 3. Critical path analysis
 4. Export functionality
 5. Performance optimization
 
-*** Phase 5: Polish & Distribution (Weeks 9-10)
+*** Phase 6: Polish & Distribution (Weeks 11-12)
 1. Build pre-built static bundle
 2. Package for MELPA
 3. Documentation
@@ -523,8 +736,8 @@ While we adopt many patterns from org-roam-ui, org-edna-graph has different requ
 
 ** Data Source
 - *org-roam-ui*: SQLite database (fast queries)
-- *org-edna-graph*: Parse org files directly (slower, but more flexible)
-- *Impact*: More caching needed, incremental parsing
+- *org-edna-graph*: **SAME** - SQLite database (essential for thousands of tasks)
+- *Impact*: Both use identical parse→sync→query pattern
 
 ** User Intent
 - *org-roam-ui*: Exploration and discovery
@@ -537,18 +750,20 @@ While we adopt many patterns from org-roam-ui, org-edna-graph has different requ
 - *Impact*: More efficient delta updates needed
 
 ** Graph Size
-- *org-roam-ui*: Can be thousands of nodes
-- *org-edna-graph*: Typically <100 tasks per project
-- *Impact*: Performance less critical, but still important
+- *org-roam-ui*: Thousands of nodes
+- *org-edna-graph*: **Thousands of tasks** (user requirement)
+- *Impact*: Performance is CRITICAL - SQLite absolutely required
 
 * Implementation Priorities
 
 ** Priority 1: Must Have (MVP)
-1. Elisp backend that parses org-edna
-2. WebSocket communication
-3. Basic DAG visualization
-4. Click to open task
-5. Theme sync
+1. SQLite database schema and sync (ESSENTIAL for thousands of tasks)
+2. Hash-based change detection
+3. Elisp backend that queries database
+4. WebSocket communication
+5. Basic DAG visualization
+6. Click to open task
+7. Theme sync
 
 ** Priority 2: Should Have (v1.0)
 1. Follow mode

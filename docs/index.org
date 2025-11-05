@@ -11,6 +11,14 @@ Welcome to the org-edna-graph documentation!
 ** [[file:potentially-useful-tools.org][Potentially useful tools]]
 Existing tools and methods that might prove useful.
 
+** Research Documents
+- [[file:org-roam-ui-research.md][org-roam-ui Research]]
+  Comprehensive analysis of org-roam-ui's architecture, technology stack, and implementation patterns.
+- [[file:org-roam-database-research.org][org-roam Database Research]]
+  Detailed research on org-roam's SQLite database implementation, sync process, and performance optimizations.
+- [[file:architecture-recommendations.org][Architecture Recommendations]]
+  Recommendations for implementing org-edna-graph based on org-roam-ui patterns.
+
 ** [[file:org-edna-setup-guidelines.org][org-edna setup guidelines]]
 Personally I found org-edna very difficult to install successfully so here is some guidelines to help others with the installation.
 
@@ -19,3 +27,11 @@ Guidelines for the project, focusing on the role of README.org for introductions
 
 ** [[file:project-management-guidelines.org][Project management guidelines]]
 Documentation strategy and workflow guidance.
+
+** Research and Architecture
+- [[file:org-roam-ui-research.md][org-roam-ui Research]]
+  Comprehensive analysis of org-roam-ui architecture and technology stack.
+- [[file:org-roam-database-research.org][org-roam Database Research]]
+  Deep dive into org-roam's SQLite implementation and recommendations for org-edna-graph.
+- [[file:architecture-recommendations.org][Architecture Recommendations]]
+  Detailed architectural recommendations based on org-roam-ui patterns.
